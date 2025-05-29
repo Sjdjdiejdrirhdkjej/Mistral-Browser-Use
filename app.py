@@ -6,7 +6,6 @@ from datetime import datetime
 from browser_automation import BrowserAutomation
 from mistral_client import MistralClient
 from element_detector import ElementDetector
-from database import DatabaseManager
 import traceback
 
 def initialize_session_state():
@@ -23,14 +22,7 @@ def initialize_session_state():
         st.session_state.automation_active = False
     if 'current_objective' not in st.session_state:
         st.session_state.current_objective = None
-    if 'db_manager' not in st.session_state:
-        try:
-            st.session_state.db_manager = DatabaseManager()
-        except Exception as e:
-            st.session_state.db_manager = None
-            st.error(f"Database connection failed: {str(e)}")
-    if 'current_session_id' not in st.session_state:
-        st.session_state.current_session_id = None
+    
 
 def setup_sidebar():
     """Setup sidebar for API key configuration and controls"""
