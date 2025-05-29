@@ -16,6 +16,8 @@ This document outlines the manual testing steps to verify recent changes related
 
 If `geckodriver` is not found by the system (e.g., you see an error like "Unable to locate package geckodriver" or "geckodriver executable needs to be in PATH"), you'll need to install it manually:
 
+**Important:** Ensure `geckodriver` is NOT listed in your `packages.txt` (or similar system package lists) or `requirements.txt` file. Listing it there can conflict with the manual installation and lead to errors. It must be installed manually as described here.
+
 1.  **Go to the geckodriver releases page:**
     [https://github.com/mozilla/geckodriver/releases](https://github.com/mozilla/geckodriver/releases)
 
