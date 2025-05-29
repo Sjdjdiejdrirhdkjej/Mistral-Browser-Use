@@ -4,13 +4,18 @@ This document outlines the manual testing steps to verify recent changes related
 
 ## 1. Setup
 
-1.  **Install Dependencies:**
-    *   Ensure you have Python installed.
-    *   Open your terminal and navigate to the root of this repository.
-    *   Install the required Python packages using the `requirements.txt` file:
-        ```bash
-        pip install -r requirements.txt
-        ```
+These instructions will guide you through setting up the application environment.
+
+1.  **Python:** Ensure Python 3.8+ is installed.
+2.  **Firefox:** Make sure Firefox is installed on your system.
+3.  **Application Dependencies:** Install the necessary Python packages from `requirements.txt`. Open your terminal and run:
+    ```bash
+    pip install --user -r requirements.txt
+    ```
+    (Or `pip install -r requirements.txt` if you prefer a global installation and have permissions). Make sure your PATH includes the directory where pip installs executables (like Streamlit).
+4.  **Mistral API Key:**
+    *   Set your Mistral AI API key as an environment variable: `export MISTRAL_API_KEY='your_api_key_here'`
+    *   Alternatively, you can enter it in the application's sidebar when you run it.
 
 ### Installing geckodriver (for Firefox browser automation)
 
@@ -47,16 +52,15 @@ If `geckodriver` is not found by the system (e.g., you see an error like "Unable
     ```
     This should output the version of geckodriver if it's installed correctly.
 
-2.  **Run the Streamlit Application:**
+7.  **Run the Streamlit Application:**
     *   In your terminal, from the root of the repository, run:
         ```bash
         streamlit run app.py
         ```
     *   This should open the "Web Automation Assistant" in your web browser.
 
-3.  **Set Mistral API Key:**
-    *   In the application's sidebar, under "🔧 Configuration" -> "Mistral AI API Key", enter your valid Mistral AI API key.
-    *   A "✅ API Key configured" message should appear if the key is accepted.
+(Note: The step for "Set Mistral API Key" was part of the new instructions and placed before geckodriver. The original step 2 "Run the Streamlit Application" is now step 7, and original step 3 "Set Mistral API Key" has been integrated as step 4 in the new instructions.)
+
 
 ## 2. Testing Navigation Fix (Issue 1)
 
