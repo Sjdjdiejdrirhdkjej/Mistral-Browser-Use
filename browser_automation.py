@@ -56,6 +56,7 @@ class BrowserAutomation:
             # Setup Firefox options
             options = Options()
             options.binary_location = firefox_binary
+            options.add_argument("-headless") # <-- ADD THIS LINE
             
             # Configure for headful mode with some optimizations
             options.add_argument('--width=1920')

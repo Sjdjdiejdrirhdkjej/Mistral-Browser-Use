@@ -14,6 +14,7 @@ This application is designed to be run in a Streamlit environment. The necessary
 *   **System Packages (`packages.txt`):**
     *   `firefox-esr` (or `firefox`): The web browser automated by Selenium.
     *   `libgl1`: A common dependency for headless browser operation and GUI libraries.
+    *   `xvfb`: X Virtual FrameBuffer, included as a general measure for supporting headless browser operation in diverse environments, even if not always strictly required by modern headless Firefox.
 *   **WebDriver:**
     *   `geckodriver`: The WebDriver for Firefox. This is installed via the `setup_geckodriver.sh` script.
 
