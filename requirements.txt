@@ -1,2 +1,4 @@
 selenium
 opencv-python
+geckodriver
+firefox
