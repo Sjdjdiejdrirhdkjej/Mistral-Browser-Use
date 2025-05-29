@@ -51,16 +51,17 @@ class BrowserAutomation:
     
     def start_browser(self):
         """Start Firefox browser in headless mode with virtual display"""
+        print("BROWSER_AUTOMATION: Entered start_browser method.")
         try:
             # Find Firefox binary
             firefox_binary = self.find_firefox_binary()
 
-            print("Initializing virtual display...")
-            self.display = Display(visible=0, size=(1920, 1080))
-            self.display.start()
-            print("Virtual display started.")
+            # print("Initializing virtual display...")
+            # self.display = Display(visible=0, size=(1920, 1080))
+            # self.display.start()
+            # print("Virtual display started.")
 
-            try:
+            # try:
                 # Setup Firefox options
                 options = Options()
                 options.binary_location = firefox_binary
@@ -81,33 +82,34 @@ class BrowserAutomation:
                 os.makedirs('screenshots', exist_ok=True)
                 
                 # Setup Firefox service for geckodriver logging
-                print("Setting up Firefox service for geckodriver logging...")
-                service = Service(log_path=os.path.join(os.getcwd(), 'geckodriver.log'))
+                # print("Setting up Firefox service for geckodriver logging...")
+                # service = Service(log_path=os.path.join(os.getcwd(), 'geckodriver.log'))
                 
                 # Start the browser
-                self.driver = webdriver.Firefox(options=options, service=service)
+                print("BROWSER_AUTOMATION: Attempting to initialize webdriver.Firefox with basic options.")
+                self.driver = webdriver.Firefox(options=options)
                 self.wait = WebDriverWait(self.driver, 10)
                 
                 # Navigate to a default page
                 self.driver.get('https://www.google.com')
                 time.sleep(2)
                 
-                print("Firefox browser started successfully in headless mode")
+                print("Firefox browser started successfully (simplified mode)")
                 return True
             
-            finally:
-                if self.driver is None and self.display is not None: # If driver init failed
-                    print("Stopping virtual display due to error in browser start...")
-                    self.display.stop()
-                    self.display = None # Reset display
+            # finally:
+            #     if self.driver is None and self.display is not None: # If driver init failed
+            #         print("Stopping virtual display due to error in browser start...")
+            #         self.display.stop()
+            #         self.display = None # Reset display
             
         except Exception as e:
-            print(f"Failed to start browser: {str(e)}")
+            print(f"Failed to start browser (simplified mode): {str(e)}")
             # Ensure display is stopped if it was started and an outer exception occurs
-            if self.display is not None and self.display.is_started:
-                 print("Stopping virtual display due to outer exception...")
-                 self.display.stop()
-                 self.display = None
+            # if self.display is not None and self.display.is_started:
+            #      print("Stopping virtual display due to outer exception...")
+            #      self.display.stop()
+            #      self.display = None
             print(traceback.format_exc())
             raise e
     
@@ -295,8 +297,8 @@ class BrowserAutomation:
             self.element_map = {}
             print("Browser closed")
 
-        if self.display:
-            print("Stopping virtual display...")
-            self.display.stop()
-            self.display = None
-            print("Virtual display stopped.")
+        # if self.display:
+        #     print("Stopping virtual display...")
+        #     self.display.stop()
+        #     self.display = None
+        #     print("Virtual display stopped.")

@@ -51,6 +51,7 @@ def setup_sidebar():
     
     if st.sidebar.button("🚀 Start Browser", disabled=st.session_state.automation_active):
         try:
+            print("APP_PY: 'Start Browser' button clicked. Attempting to initialize BrowserAutomation and start browser...")
             st.session_state.browser = BrowserAutomation()
             st.session_state.browser.start_browser()
             st.sidebar.success("✅ Browser started")
