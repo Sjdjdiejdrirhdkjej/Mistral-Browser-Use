@@ -1,3 +1,2 @@
 libgl1
 firefox-esr
-# geckodriver must be installed manually, see TESTING.md for instructions.
