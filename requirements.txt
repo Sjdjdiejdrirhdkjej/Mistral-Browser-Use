@@ -1,3 +1,2 @@
 selenium
 opencv-python
-geckodriver
