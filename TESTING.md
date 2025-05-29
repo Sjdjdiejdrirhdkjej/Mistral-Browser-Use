@@ -12,6 +12,39 @@ This document outlines the manual testing steps to verify recent changes related
         pip install -r requirements.txt
         ```
 
+### Installing geckodriver (for Firefox browser automation)
+
+If `geckodriver` is not found by the system (e.g., you see an error like "Unable to locate package geckodriver" or "geckodriver executable needs to be in PATH"), you'll need to install it manually:
+
+1.  **Go to the geckodriver releases page:**
+    [https://github.com/mozilla/geckodriver/releases](https://github.com/mozilla/geckodriver/releases)
+
+2.  **Download the latest version for your system.** Look for files like:
+    *   `geckodriver-vX.YY.Z-linux64.tar.gz` for 64-bit Linux.
+    *   `geckodriver-vX.YY.Z-linux32.tar.gz` for 32-bit Linux.
+    *   (Adjust for macOS or Windows if providing instructions for them, but prioritize Linux based on the user's error).
+
+3.  **Extract the downloaded file.** For example, if you downloaded `geckodriver-v0.36.0-linux64.tar.gz`:
+    ```bash
+    tar -xvzf geckodriver-v0.36.0-linux64.tar.gz
+    ```
+
+4.  **Make it executable:**
+    ```bash
+    chmod +x geckodriver
+    ```
+
+5.  **Move the `geckodriver` executable to a directory in your system's PATH.** A common location is `/usr/local/bin`:
+    ```bash
+    sudo mv geckodriver /usr/local/bin/
+    ```
+
+6.  **Verify the installation:**
+    ```bash
+    geckodriver --version
+    ```
+    This should output the version of geckodriver if it's installed correctly.
+
 2.  **Run the Streamlit Application:**
     *   In your terminal, from the root of the repository, run:
         ```bash
