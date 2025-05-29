@@ -11,10 +11,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import traceback
+from pyvirtualdisplay import Display
 
 class BrowserAutomation:
     def __init__(self):
         self.driver = None
+        self.display = None
         self.wait = None
         self.screenshot_counter = 1
         self.element_map = {}  # Maps indexes to elements
@@ -48,39 +50,64 @@ class BrowserAutomation:
         raise Exception("Firefox binary not found. Please install Firefox.")
     
     def start_browser(self):
-        """Start Firefox browser in headful mode"""
+        """Start Firefox browser in headless mode with virtual display"""
         try:
             # Find Firefox binary
             firefox_binary = self.find_firefox_binary()
+
+            print("Initializing virtual display...")
+            self.display = Display(visible=0, size=(1920, 1080))
+            self.display.start()
+            print("Virtual display started.")
+
+            try:
+                # Setup Firefox options
+                options = Options()
+                options.binary_location = firefox_binary
+                
+                # Configure for headless mode
+                options.add_argument("--headless")
+                options.add_argument("--disable-gpu")
+                options.add_argument("--no-sandbox")
+                options.add_argument("--disable-dev-shm-usage")
+                options.add_argument('--width=1920')
+                options.add_argument('--height=1080')
+                options.set_preference('dom.webdriver.enabled', False)
+                options.set_preference('useAutomationExtension', False)
+                options.set_preference('general.useragent.override', 
+                                     'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0')
+                
+                # Create screenshots directory if it doesn't exist
+                os.makedirs('screenshots', exist_ok=True)
+                
+                # Setup Firefox service for geckodriver logging
+                print("Setting up Firefox service for geckodriver logging...")
+                service = Service(log_path=os.path.join(os.getcwd(), 'geckodriver.log'))
+                
+                # Start the browser
+                self.driver = webdriver.Firefox(options=options, service=service)
+                self.wait = WebDriverWait(self.driver, 10)
+                
+                # Navigate to a default page
+                self.driver.get('https://www.google.com')
+                time.sleep(2)
+                
+                print("Firefox browser started successfully in headless mode")
+                return True
             
-            # Setup Firefox options
-            options = Options()
-            options.binary_location = firefox_binary
-            
-            # Configure for headful mode with some optimizations
-            options.add_argument('--width=1920')
-            options.add_argument('--height=1080')
-            options.set_preference('dom.webdriver.enabled', False)
-            options.set_preference('useAutomationExtension', False)
-            options.set_preference('general.useragent.override', 
-                                 'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0')
-            
-            # Create screenshots directory if it doesn't exist
-            os.makedirs('screenshots', exist_ok=True)
-            
-            # Start the browser
-            self.driver = webdriver.Firefox(options=options)
-            self.wait = WebDriverWait(self.driver, 10)
-            
-            # Navigate to a default page
-            self.driver.get('https://www.google.com')
-            time.sleep(2)
-            
-            print("Firefox browser started successfully")
-            return True
+            finally:
+                if self.driver is None and self.display is not None: # If driver init failed
+                    print("Stopping virtual display due to error in browser start...")
+                    self.display.stop()
+                    self.display = None # Reset display
             
         except Exception as e:
             print(f"Failed to start browser: {str(e)}")
+            # Ensure display is stopped if it was started and an outer exception occurs
+            if self.display is not None and self.display.is_started:
+                 print("Stopping virtual display due to outer exception...")
+                 self.display.stop()
+                 self.display = None
             print(traceback.format_exc())
             raise e
     
@@ -267,3 +294,9 @@ class BrowserAutomation:
             self.wait = None
             self.element_map = {}
             print("Browser closed")
+
+        if self.display:
+            print("Stopping virtual display...")
+            self.display.stop()
+            self.display = None
+            print("Virtual display stopped.")
