@@ -48,10 +48,13 @@ class BrowserAutomation:
         raise Exception("Firefox binary not found. Please install Firefox.")
     
     def start_browser(self):
-        """Start Firefox browser in headful mode"""
+        """Start Firefox browser with enhanced logging"""
+        print("Attempting to start browser...")
         try:
             # Find Firefox binary
+            print("Finding Firefox binary...")
             firefox_binary = self.find_firefox_binary()
+            print(f"Found Firefox binary at: {firefox_binary}")
             
             # Setup Firefox options
             options = Options()
@@ -68,23 +71,35 @@ class BrowserAutomation:
             # Add headless option
             options.add_argument('-headless')
             
+            print(f"Using Firefox options arguments: {options.arguments}")
+            # Note: options.preferences is not a direct attribute to log all set preferences easily.
+            # We log arguments and binary location. Individual preferences are set above.
+            if options.binary_location:
+                print(f"Explicit Firefox binary_location: {options.binary_location}")
+
             # Create screenshots directory if it doesn't exist
             os.makedirs('screenshots', exist_ok=True)
             
+            print("Initializing WebDriver...")
             # Start the browser
             self.driver = webdriver.Firefox(options=options)
             self.wait = WebDriverWait(self.driver, 10)
             
-            # Navigate to a default page
+            print("Navigating to default page (google.com)...")
             self.driver.get('https://www.google.com')
-            time.sleep(2)
+            time.sleep(2) # Keep or adjust as needed
             
             print("Firefox browser started successfully")
             return True
             
         except Exception as e:
-            print(f"Failed to start browser: {str(e)}")
+            print("-----------------------------------------------------")
+            print("!!! ERROR DURING FIREFOX STARTUP !!!")
+            print(f"Exception Type: {type(e).__name__}")
+            print(f"Exception Message: {str(e)}")
+            print("Traceback:")
             print(traceback.format_exc())
+            print("-----------------------------------------------------")
             raise e
     
     def take_screenshot(self):

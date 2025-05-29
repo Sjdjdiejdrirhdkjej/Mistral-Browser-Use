@@ -37,3 +37,11 @@ When deploying this application to platforms like Streamlit Cloud:
     ```
     The platform will attempt to install these using the system package manager (`apt-get`).
 *   **Python Dependencies (`requirements.txt`):** Python dependencies are managed by `requirements.txt` as usual. Ensure `selenium` and other necessary packages are listed. `geckodriver` should NOT be listed as a Python package here.
+
+#### Troubleshooting Deployment Issues
+
+If the application crashes during startup in a deployment environment (especially after messages like "spinning up the manager process" or if browser startup fails):
+
+*   **Check Deployment Logs:** Carefully review the logs provided by your deployment platform (e.g., Streamlit Cloud logs). The application has been updated to print detailed error messages during the browser startup phase. Look for lines starting with "!!! ERROR DURING FIREFOX STARTUP !!!" or other error messages printed by `browser_automation.py`. These logs will contain specific error details and tracebacks that are crucial for diagnosing the problem.
+*   **Dependencies:** Double-check that `packages.txt` includes `libgl1`, `firefox-esr`, and `geckodriver`, and that `requirements.txt` includes `selenium` and `opencv-python`.
+*   **Resource Limits:** Ensure your deployment instance has sufficient memory and CPU resources. Browser startup can be resource-intensive.
