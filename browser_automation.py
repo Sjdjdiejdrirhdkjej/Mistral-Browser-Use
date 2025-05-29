@@ -65,6 +65,9 @@ class BrowserAutomation:
             options.set_preference('general.useragent.override', 
                                  'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0')
             
+            # Add headless option
+            options.add_argument('-headless')
+            
             # Create screenshots directory if it doesn't exist
             os.makedirs('screenshots', exist_ok=True)
             
