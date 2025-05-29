@@ -68,9 +68,14 @@ class BrowserAutomation:
             
             # Create screenshots directory if it doesn't exist
             os.makedirs('screenshots', exist_ok=True)
-            
+
+            # Setup geckodriver Service for logging
+            log_path = os.path.join(os.getcwd(), "geckodriver.log")
+            service = Service(log_output=log_path)
+            print(f"Geckodriver logs will be written to: {log_path}") # Optional: for user info
+
             # Start the browser
-            self.driver = webdriver.Firefox(options=options)
+            self.driver = webdriver.Firefox(service=service, options=options) # MODIFIED LINE
             self.wait = WebDriverWait(self.driver, 10)
             
             # Navigate to a default page

@@ -46,3 +46,6 @@ This application is designed to be run in a Streamlit environment. The necessary
     ```
 
 The `browser_automation.py` script expects `geckodriver` to be accessible via the system's PATH, which is handled by the `setup_geckodriver.sh` script.
+
+**Debugging Browser Issues:**
+If you encounter issues with the browser starting up, check the `geckodriver.log` file created in the application's root directory. This file contains detailed logs from the WebDriver and can provide clues to the cause of the problem. This log file is ignored by git via `.gitignore`.
