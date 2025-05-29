@@ -113,16 +113,19 @@ def take_screenshot_and_analyze():
         # Take screenshot
         screenshot_path = st.session_state.browser.take_screenshot()
         add_message("assistant", screenshot_path, "image", "Current page screenshot")
+        st.rerun()
         
         # Detect and highlight elements
         annotated_image_path = st.session_state.element_detector.detect_and_annotate_elements(screenshot_path, st.session_state.browser)
         add_message("assistant", annotated_image_path, "image", "Elements detected and indexed")
+        st.rerun()
         
         return annotated_image_path
         
     except Exception as e:
         error_msg = f"Failed to take screenshot: {str(e)}"
         add_message("assistant", error_msg, "error")
+        st.rerun()
         return None
 
 def execute_automation_step(user_objective):
@@ -152,7 +155,9 @@ def execute_automation_step(user_objective):
         action = response.get('action', 'No action specified')
         
         add_message("assistant", thinking, "thinking")
+        st.rerun()
         add_message("assistant", action, "action")
+        st.rerun()
         
         # Execute action
         if action.lower().startswith('click('):
@@ -162,8 +167,16 @@ def execute_automation_step(user_objective):
                 index = int(index_str)
                 st.session_state.browser.click_element_by_index(index)
                 add_message("assistant", f"Clicked element at index {index}")
+                st.rerun()
             except ValueError:
                 raise Exception(f"Invalid index in action: {action}")
+
+        elif action.lower().startswith('navigate('):
+            # Extract URL from navigate(URL)
+            url = action.split('(')[1].split(')')[0].strip("'\"") 
+            st.session_state.browser.navigate_to(url)
+            add_message("assistant", f"Navigating to {url}")
+            st.rerun()
         
         elif action.lower().startswith('type('):
             # Extract text and element from type("TEXT", into="ELEMENT") or type('TEXT', into='ELEMENT')
@@ -172,25 +185,35 @@ def execute_automation_step(user_objective):
             match = re.search(r"type\(['\"](.*?)['\"]\s*,\s*into\s*=\s*['\"](.*?)['\"]\)", action)
             if match:
                 text = match.group(1)
-                element = match.group(2)
-                st.session_state.browser.type_text(text, element)
-                add_message("assistant", f"Typed '{text}' into {element}")
+                element_description = match.group(2)
+                
+                if element_description.lower() == "browser address bar":
+                    st.session_state.browser.navigate_to(text)
+                    add_message("assistant", f"Navigating to {text}")
+                    st.rerun()
+                else:
+                    st.session_state.browser.type_text(text, element_description)
+                    add_message("assistant", f"Typed '{text}' into {element_description}")
+                    st.rerun()
             else:
                 raise Exception(f"Invalid type action format: {action}")
         
         elif 'complete' in action.lower() or 'done' in action.lower():
             st.session_state.automation_active = False
             add_message("assistant", "🎉 Objective completed successfully!")
+            st.rerun()
             return False
         
         else:
             add_message("assistant", f"Unknown action: {action}", "error")
+            st.rerun()
         
         return True
         
     except Exception as e:
         error_msg = f"Automation step failed: {str(e)}\n{traceback.format_exc()}"
         add_message("assistant", error_msg, "error")
+        st.rerun()
         st.session_state.automation_active = False
         return False
 
@@ -219,6 +242,7 @@ def main():
     
     if user_input:
         add_message("user", user_input)
+        st.rerun()
         
         # Check prerequisites
         if not st.session_state.mistral_client:
@@ -236,6 +260,7 @@ def main():
         st.session_state.automation_active = True
         
         add_message("assistant", f"Starting automation for: {user_input}")
+        st.rerun()
         
         # Execute automation steps
         max_steps = 20  # Prevent infinite loops
@@ -244,8 +269,10 @@ def main():
         while st.session_state.automation_active and step_count < max_steps:
             step_count += 1
             add_message("assistant", f"--- Step {step_count} ---")
+            st.rerun()
             
             success = execute_automation_step(user_input)
+            st.rerun() # Rerun after each step
             if not success:
                 break
             
@@ -253,14 +280,10 @@ def main():
         
         if step_count >= max_steps:
             add_message("assistant", "Maximum steps reached. Stopping automation.", "error")
+            st.rerun()
             st.session_state.automation_active = False
         
-        st.rerun()
-    
-    # Auto-continue automation if active
-    if st.session_state.automation_active:
-        time.sleep(1)
-        st.rerun()
+    # Auto-continue removed as reruns are handled within the loop and after messages
 
 if __name__ == "__main__":
     main()
