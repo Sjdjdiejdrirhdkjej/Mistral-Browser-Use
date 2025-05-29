@@ -26,6 +26,7 @@ class BrowserAutomation:
             '/usr/local/bin/firefox',
             '/opt/firefox/firefox',
             '/snap/bin/firefox',
+            '/usr/bin/firefox-esr',  # Added firefox-esr
             'firefox'  # In PATH
         ]
         
@@ -39,16 +40,23 @@ class BrowserAutomation:
         
         # Try using 'which' command
         try:
-            result = subprocess.run(['which', 'firefox'], capture_output=True, text=True)
+            result = subprocess.run(['which', 'firefox-esr'], capture_output=True, text=True) # Changed to firefox-esr
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except:
+            pass
+
+        try:
+            result = subprocess.run(['which', 'firefox'], capture_output=True, text=True) # Fallback to firefox
             if result.returncode == 0:
                 return result.stdout.strip()
         except:
             pass
         
-        raise Exception("Firefox binary not found. Please install Firefox.")
+        raise Exception("Firefox binary not found. Please install Firefox or Firefox ESR.")
     
     def start_browser(self):
-        """Start Firefox browser in headful mode"""
+        """Start Firefox browser in headless mode""" # Changed to headless
         try:
             # Find Firefox binary
             firefox_binary = self.find_firefox_binary()
@@ -56,8 +64,9 @@ class BrowserAutomation:
             # Setup Firefox options
             options = Options()
             options.binary_location = firefox_binary
+            options.add_argument('--headless') # Added headless argument
             
-            # Configure for headful mode with some optimizations
+            # Configure for headless mode with some optimizations
             options.add_argument('--width=1920')
             options.add_argument('--height=1080')
             options.set_preference('dom.webdriver.enabled', False)
@@ -69,7 +78,13 @@ class BrowserAutomation:
             os.makedirs('screenshots', exist_ok=True)
             
             # Start the browser
-            self.driver = webdriver.Firefox(options=options)
+            geckodriver_path = os.getenv('GECKODRIVER_PATH')
+            if geckodriver_path:
+                service = Service(executable_path=geckodriver_path)
+                self.driver = webdriver.Firefox(service=service, options=options)
+            else:
+                self.driver = webdriver.Firefox(options=options)
+            
             self.wait = WebDriverWait(self.driver, 10)
             
             # Navigate to a default page
