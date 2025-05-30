@@ -269,10 +269,10 @@ def main():
                 st.rerun()
                 return
 
-            add_message("assistant", "🧠 Generating steps with pixtral-large-latest...", "info")
+            add_message("assistant", "🧠 Generating steps with mistral-large-latest...", "info")
             generated_steps = st.session_state.mistral_client.generate_steps_for_todo(
                 user_prompt=user_input, 
-                model_name="pixtral-large-latest" 
+                model_name="mistral-large-latest" 
             )
 
             if not generated_steps:
@@ -294,7 +294,7 @@ def main():
             st.session_state.current_task_index = 0 # Start from the first task
 
             # Display To-Do List
-            plan_display_intro = "**Planning Agent (Pixtral) says:** Planning complete. Here's the initial plan:"
+            plan_display_intro = "**Planning Agent (Mistral-Large) says:** Planning complete. Here's the initial plan:"
             plan_display = f"{plan_display_intro}\n\n**Objective:** {st.session_state.todo_objective}\n\n"
             plan_display += "**Tasks:**\n"
             if st.session_state.todo_tasks:
