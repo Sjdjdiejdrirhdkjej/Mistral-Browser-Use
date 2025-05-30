@@ -22,6 +22,8 @@ def initialize_session_state():
         st.session_state.automation_active = False
     if 'current_objective' not in st.session_state:
         st.session_state.current_objective = None
+    if 'step_count' not in st.session_state: # Add this check
+        st.session_state.step_count = 0    # Add this line
     
 
 def setup_sidebar():
@@ -224,41 +226,48 @@ def main():
         if not st.session_state.mistral_client:
             add_message("assistant", "Please configure your Mistral AI API key in the sidebar first.", "error")
             st.rerun()
-            return
+            return # Add this if not already standard practice in the codebase for early exits
         
         if not st.session_state.browser:
             add_message("assistant", "Please start the browser first using the sidebar controls.", "error")
             st.rerun()
-            return
-        
-        # Start automation
+            return # Add this for consistency
+
         st.session_state.current_objective = user_input
         st.session_state.automation_active = True
+        st.session_state.step_count = 0 # Reset step_count for the new objective
         
-        add_message("assistant", f"Starting automation for: {user_input}")
+        add_message("assistant", f"Starting automation for: {st.session_state.current_objective}") # Use current_objective from session state
         
-        # Execute automation steps
-        max_steps = 20  # Prevent infinite loops
-        step_count = 0
-        
-        while st.session_state.automation_active and step_count < max_steps:
-            step_count += 1
-            add_message("assistant", f"--- Step {step_count} ---")
+        st.rerun() # This transitions to the step-by-step execution
+    
+    # Main step-by-step automation logic
+    if st.session_state.get('automation_active') and st.session_state.get('current_objective'):
+        max_steps = 20  # Define or retrieve max_steps
+
+        current_step_count = st.session_state.get('step_count', 0)
+
+        if current_step_count < max_steps:
+            # Increment step_count for the current step being executed
+            st.session_state.step_count = current_step_count + 1 
+
+            add_message("assistant", f"--- Step {st.session_state.step_count} of {max_steps} ---")
             
-            success = execute_automation_step(user_input)
+            success = execute_automation_step(st.session_state.current_objective)
+            
             if not success:
-                break
-            
-            time.sleep(2)  # Brief pause between steps
-        
-        if step_count >= max_steps:
-            add_message("assistant", "Maximum steps reached. Stopping automation.", "error")
-            st.session_state.automation_active = False
-        
-        st.rerun()
+                # execute_automation_step usually sets automation_active to False on errors or completion.
+                # This is a safeguard.
+                if st.session_state.get('automation_active', False): 
+                    add_message("assistant", "Stopping automation due to step failure or completion signal.", "error")
+                    st.session_state.automation_active = False
+        else: # current_step_count >= max_steps
+            if st.session_state.get('automation_active', False): 
+                add_message("assistant", f"Maximum steps ({max_steps}) reached. Stopping automation.", "error")
+                st.session_state.automation_active = False
     
     # Auto-continue automation if active
-    if st.session_state.automation_active:
+    if st.session_state.get('automation_active'): # Use .get for safety
         time.sleep(1)
         st.rerun()
 
