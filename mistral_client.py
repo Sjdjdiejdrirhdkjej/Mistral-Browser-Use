@@ -21,6 +21,7 @@ class MistralClient:
 AVAILABLE ACTIONS:
 - click(INDEX) - Click on an element by its numbered index (shown in red circles)
 - type("TEXT", into="ELEMENT") - Type text into an input field (specify element by description)
+- press_key("KEY_NAME"): Simulates pressing a special key on the keyboard. KEY_NAME should be one of ["enter", "escape", "tab"]. Use "enter" for submitting forms or search queries after typing, "escape" for closing dialogs, or "tab" to navigate form elements.
 - COMPLETE - When the objective is achieved
 
 RESPONSE FORMAT:

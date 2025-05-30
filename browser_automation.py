@@ -9,6 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.keys import Keys # Added import
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import traceback
 from webdriver_manager.firefox import GeckoDriverManager # New import
@@ -278,3 +279,38 @@ class BrowserAutomation:
             self.wait = None
             self.element_map = {}
             print("Browser closed")
+
+    def press_key(self, key_name: str):
+        """Press a special key (e.g., Enter, Escape, Tab)."""
+        if not self.driver:
+            print("Error: Driver not available for press_key action.") # Or raise an exception
+            return
+
+        key_to_press = None
+        normalized_key_name = key_name.lower()
+
+        if normalized_key_name == "enter":
+            key_to_press = Keys.ENTER
+        elif normalized_key_name == "escape":
+            key_to_press = Keys.ESCAPE
+        elif normalized_key_name == "tab":
+            key_to_press = Keys.TAB
+        # Add more key mappings here if needed
+        # Example:
+        # elif normalized_key_name == "space":
+        #     key_to_press = Keys.SPACE
+        # elif normalized_key_name == "page_down":
+        #     key_to_press = Keys.PAGE_DOWN
+        else:
+            print(f"Warning: Unsupported key_name '{key_name}' provided to press_key. No action taken.")
+            # Consider raising an error for unsupported keys if strict behavior is desired:
+            # raise ValueError(f"Unsupported key_name: {key_name}")
+            return
+
+        try:
+            ActionChains(self.driver).send_keys(key_to_press).perform()
+            print(f"Successfully pressed key: {normalized_key_name}") # Use proper logging in a real app
+        except Exception as e:
+            print(f"Error pressing key '{normalized_key_name}': {e}")
+            # Consider re-raising the exception or a custom one if the caller needs to handle it:
+            # raise Exception(f"Failed to press key {normalized_key_name}: {e}")

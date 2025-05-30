@@ -7,6 +7,7 @@ from browser_automation import BrowserAutomation
 from mistral_client import MistralClient
 from element_detector import ElementDetector
 import traceback
+import re # Added import
 
 def initialize_session_state():
     """Initialize session state variables"""
@@ -169,7 +170,6 @@ def execute_automation_step(user_objective):
         
         elif action.lower().startswith('type('):
             # Extract text and element from type("TEXT", into="ELEMENT") or type('TEXT', into='ELEMENT')
-            import re
             # Match both single and double quotes
             match = re.search(r"type\(['\"](.*?)['\"]\s*,\s*into\s*=\s*['\"](.*?)['\"]\)", action)
             if match:
@@ -179,6 +179,18 @@ def execute_automation_step(user_objective):
                 add_message("assistant", f"Typed '{text}' into {element}")
             else:
                 raise Exception(f"Invalid type action format: {action}")
+
+        elif action.lower().startswith('press_key('):
+            match = re.search(r"press_key\(['\"](.*?)['"]\)", action, re.IGNORECASE) 
+            if match:
+                key_name = match.group(1).lower() # Normalize to lower
+                st.session_state.browser.press_key(key_name)
+                add_message("assistant", f"Pressed key: {key_name}")
+            else:
+                error_msg = f"Invalid press_key action format: {action}"
+                add_message("assistant", error_msg, "error")
+                # This will not stop automation by itself, but error is logged.
+                # Consider if `raise Exception(error_msg)` is more appropriate to stop.
         
         elif 'complete' in action.lower() or 'done' in action.lower():
             st.session_state.automation_active = False
