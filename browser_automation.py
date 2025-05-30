@@ -60,10 +60,10 @@ class BrowserAutomation:
             # Configure for headful mode with some optimizations
             options.add_argument('--width=1920')
             options.add_argument('--height=1080')
-            options.set_preference('dom.webdriver.enabled', False)
+            # options.set_preference('dom.webdriver.enabled', False) # Suspected cause of timeout
             options.set_preference('useAutomationExtension', False)
-            options.set_preference('general.useragent.override', 
-                                 'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0')
+            # options.set_preference('general.useragent.override', 
+            #                      'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0')
             
             # Create screenshots directory if it doesn't exist
             os.makedirs('screenshots', exist_ok=True)
