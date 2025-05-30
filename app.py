@@ -181,7 +181,7 @@ def execute_automation_step(user_objective):
                 raise Exception(f"Invalid type action format: {action}")
 
         elif action.lower().startswith('press_key('):
-            match = re.search(r"press_key\(['\"](.*?)['"]\)", action, re.IGNORECASE) 
+            match = re.search(r"press_key\s*\(\s*['"]?([^'"]*)['"]?\s*\)", action, re.IGNORECASE)
             if match:
                 key_name = match.group(1).lower() # Normalize to lower
                 st.session_state.browser.press_key(key_name)
