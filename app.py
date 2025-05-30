@@ -257,10 +257,9 @@ def main():
         
         st.rerun()
     
-    # Auto-continue automation if active
-    if st.session_state.automation_active:
-        time.sleep(1)
-        st.rerun()
+    # Periodically refresh the UI
+    time.sleep(2)  # Refresh every 2 seconds
+    st.rerun()
 
 if __name__ == "__main__":
     main()
