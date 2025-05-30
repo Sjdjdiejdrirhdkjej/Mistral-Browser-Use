@@ -64,38 +64,38 @@ class BrowserAutomation:
             try:
                 # Setup Firefox options
                 options = Options()
-            options.binary_location = firefox_binary
+                options.binary_location = firefox_binary
             
-            # Configure for headless mode
-            options.add_argument("--headless")
-            options.add_argument("--disable-gpu")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            options.add_argument('--width=1920')
-            options.add_argument('--height=1080')
-            options.set_preference('dom.webdriver.enabled', False)
-            options.set_preference('useAutomationExtension', False)
-            options.set_preference('general.useragent.override', 
-                                 'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0')
+                # Configure for headless mode
+                options.add_argument("--headless")
+                options.add_argument("--disable-gpu")
+                options.add_argument("--no-sandbox")
+                options.add_argument("--disable-dev-shm-usage")
+                options.add_argument('--width=1920')
+                options.add_argument('--height=1080')
+                options.set_preference('dom.webdriver.enabled', False)
+                options.set_preference('useAutomationExtension', False)
+                options.set_preference('general.useragent.override', 
+                                     'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0')
             
-            # Create screenshots directory if it doesn't exist
-            os.makedirs('screenshots', exist_ok=True)
+                # Create screenshots directory if it doesn't exist
+                os.makedirs('screenshots', exist_ok=True)
             
-            # Setup Firefox service for geckodriver logging
-            print("Setting up Firefox service for geckodriver logging...")
-            service = Service(log_path=os.path.join(os.getcwd(), 'geckodriver.log'))
+                # Setup Firefox service for geckodriver logging
+                print("Setting up Firefox service for geckodriver logging...")
+                service = Service(log_path=os.path.join(os.getcwd(), 'geckodriver.log'))
             
-            # Start the browser
-            print("BROWSER_AUTOMATION: Attempting to initialize webdriver.Firefox with options and service.")
-            self.driver = webdriver.Firefox(options=options, service=service)
-            self.wait = WebDriverWait(self.driver, 10)
+                # Start the browser
+                print("BROWSER_AUTOMATION: Attempting to initialize webdriver.Firefox with options and service.")
+                self.driver = webdriver.Firefox(options=options, service=service)
+                self.wait = WebDriverWait(self.driver, 10)
             
-            # Navigate to a default page
-            self.driver.get('https://www.google.com')
-            time.sleep(2)
+                # Navigate to a default page
+                self.driver.get('https://www.google.com')
+                time.sleep(2)
             
-            print("Firefox browser started successfully")
-            return True
+                print("Firefox browser started successfully")
+                return True
             
             finally:
                 if self.driver is None and self.display is not None: # If driver init failed
