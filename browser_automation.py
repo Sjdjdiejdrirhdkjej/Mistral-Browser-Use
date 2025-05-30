@@ -68,8 +68,11 @@ class BrowserAutomation:
             # Create screenshots directory if it doesn't exist
             os.makedirs('screenshots', exist_ok=True)
             
+            # Setup Firefox service
+            service = Service(executable_path='geckodriver', service_log_path='geckodriver.log')
+            
             # Start the browser
-            self.driver = webdriver.Firefox(options=options)
+            self.driver = webdriver.Firefox(service=service, options=options)
             self.wait = WebDriverWait(self.driver, 10)
             
             # Navigate to a default page
