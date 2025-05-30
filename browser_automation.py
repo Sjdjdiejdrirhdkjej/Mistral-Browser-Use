@@ -11,6 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import traceback
+from webdriver_manager.firefox import GeckoDriverManager # New import
 
 class BrowserAutomation:
     def __init__(self):
@@ -48,7 +49,7 @@ class BrowserAutomation:
         raise Exception("Firefox binary not found. Please install Firefox.")
     
     def start_browser(self):
-        """Start Firefox browser in headful mode"""
+        """Start Firefox browser, configured for headless operation."""
         try:
             # Find Firefox binary
             firefox_binary = self.find_firefox_binary()
@@ -56,6 +57,7 @@ class BrowserAutomation:
             # Setup Firefox options
             options = Options()
             options.binary_location = firefox_binary
+            options.add_argument('--headless') # Run in headless mode
             
             # Configure for headful mode with some optimizations
             options.add_argument('--width=1920')
@@ -68,8 +70,14 @@ class BrowserAutomation:
             # Create screenshots directory if it doesn't exist
             os.makedirs('screenshots', exist_ok=True)
             
+            # Use webdriver-manager to get geckodriver
+            geckodriver_path = GeckoDriverManager().install()
+
             # Setup Firefox service
-            service = Service(executable_path='geckodriver', service_log_path='geckodriver.log')
+            service = Service(
+                executable_path=geckodriver_path, 
+                service_log_path='geckodriver.log'
+            )
             
             # Start the browser
             self.driver = webdriver.Firefox(service=service, options=options)
