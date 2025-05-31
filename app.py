@@ -564,6 +564,18 @@ def main():
                 st.session_state.orchestrator_active = False
                 # Rerun is at the end of the current task cycle block
 
+            # Calculate approximate size of messages content (sum of lengths of string content)
+            approx_messages_content_size = 0
+            if 'messages' in st.session_state and st.session_state.messages:
+                for msg in st.session_state.messages:
+                    if isinstance(msg.get('content'), str):
+                        approx_messages_content_size += len(msg['content'])
+
+            log_debug_message(f"DEBUG_SIZE: Before task cycle rerun (task_idx {task_idx}): len(messages) = {len(st.session_state.get('messages', []))}, approx_messages_content_size = {approx_messages_content_size}")
+
+            # Log length of execution_summary
+            log_debug_message(f"DEBUG_SIZE: Before task cycle rerun (task_idx {task_idx}): len(execution_summary) = {len(st.session_state.get('execution_summary', []))}")
+
             log_debug_message(f"DEBUG_STATE: Just before st.rerun() after orchestrator task cycle (task_idx {task_idx}), 'messages' in session_state: {'messages' in st.session_state}")
             st.rerun()
 
