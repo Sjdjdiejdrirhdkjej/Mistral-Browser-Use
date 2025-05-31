@@ -71,9 +71,7 @@ def setup_sidebar():
             st.session_state.browser = BrowserAutomation()
             st.session_state.browser.start_browser()
             st.sidebar.success("✅ Browser started")
-            # Add this line to show initial page:
-            if st.session_state.livestream_placeholder: # Ensure placeholder exists
-                 update_livestream_display()
+            # Removed update_livestream_display() call
         except Exception as e:
             st.sidebar.error(f"❌ Failed to start browser: {str(e)}")
     
@@ -84,14 +82,12 @@ def setup_sidebar():
                 st.session_state.browser = None
                 st.session_state.automation_active = False
             st.sidebar.success("✅ Browser stopped")
-            # Add this to clear the image:
-            if st.session_state.livestream_placeholder: # Ensure placeholder exists
-                st.session_state.livestream_placeholder.empty()
+            # Removed placeholder clearing
         except Exception as e:
             st.sidebar.error(f"❌ Failed to stop browser: {str(e)}")
     
     # Status indicators
-    st.sidebar.divider()
+    st.sidebar.divider() # This divider remains for Status
     st.sidebar.subheader("Status")
     
     browser_status = "🟢 Running" if st.session_state.browser and st.session_state.automation_active else "🔴 Stopped"
@@ -100,9 +96,7 @@ def setup_sidebar():
     api_status = "🟢 Connected" if st.session_state.mistral_client else "🔴 Not configured"
     st.sidebar.write(f"Mistral AI: {api_status}")
 
-    st.sidebar.divider()
-    st.sidebar.subheader("🌐 Browser Livestream")
-    st.session_state.livestream_placeholder = st.sidebar.empty()
+    # Removed Browser Livestream subheader, divider and placeholder initialization from sidebar
 
 def display_chat_history():
     """Display chat message history"""
@@ -280,236 +274,230 @@ def main():
     
     st.title("🤖 Web Automation Assistant")
     st.subheader("Powered by Mistral AI & Computer Vision")
-    
-    initialize_session_state()
+
+    initialize_session_state() # Critical to be called early
+
+    # Define columns for main layout
+    main_col, right_livestream_col = st.columns([3, 2]) # Example ratio: 3 for main, 2 for livestream
+
+    with right_livestream_col:
+        st.subheader("🌐 Browser View") # Header for the livestream
+        st.session_state.livestream_placeholder = st.empty()
+
+    # Call setup_sidebar() - This is global, not in a column.
+    # It also potentially initializes the browser if a key is present
     setup_sidebar()
-    
-    # Main chat interface
-    st.write("Enter your automation objective and I'll help you navigate the web!")
-    
-    # Display chat history
-    display_chat_history() # Keep this before livestream update
-    update_livestream_display() # Add this call
-    
-    # User input
-    user_input = st.chat_input("What would you like me to do on the web?")
-    
-    if user_input:
-        add_message("user", user_input)
-        
-        # Check prerequisites
-        if not st.session_state.mistral_client:
-            add_message("assistant", "Please configure your Mistral AI API key in the sidebar first.", "error")
-            st.rerun()
-            return # Add this if not already standard practice in the codebase for early exits
-        
-        if not st.session_state.browser:
-            add_message("assistant", "Please start the browser first using the sidebar controls.", "error")
-            st.rerun()
-            return # Add this for consistency
 
-        st.session_state.current_objective = user_input
-        # New Orchestrator Logic
-        st.session_state.orchestrator_active = True
-        st.session_state.automation_active = False # Disable old automation loop
-        st.session_state.current_task_index = 0 # Reset task index for new objective
-        st.session_state.execution_summary = [] # Reset summary
-
-        add_message("assistant", f"Received new objective: {user_input}. Initializing orchestrator and planning steps...")
+    with main_col:
+        st.write("Enter your automation objective and I'll help you navigate the web!")
+        display_chat_history() # Display chat messages in the main column
         
-        # Reset todo.md
-        todo_manager.reset_todo_file(user_input)
-        add_message("assistant", f"📝 `todo.md` reset for objective: {user_input}", "info")
+        # Initial update of the livestream display, after placeholder and browser are potentially ready
+        if 'livestream_placeholder' in st.session_state and st.session_state.livestream_placeholder:
+             update_livestream_display()
 
-        # Generate Steps
-        try:
+        user_input = st.chat_input("What would you like me to do on the web?")
+
+        if user_input:
+            add_message("user", user_input)
+
+            # Check prerequisites
             if not st.session_state.mistral_client:
-                add_message("assistant", "Mistral client not initialized. Cannot generate steps.", "error")
-                st.session_state.orchestrator_active = False
+                add_message("assistant", "Please configure your Mistral AI API key in the sidebar first.", "error")
                 st.rerun()
                 return
 
-            add_message("assistant", "🧠 Generating steps with pixtral-large-latest...", "info")
-            generated_steps = st.session_state.mistral_client.generate_steps_for_todo(
-                user_prompt=user_input,
-                model_name="pixtral-large-latest"
-            )
-
-            if not generated_steps:
-                add_message("assistant", "⚠️ Failed to generate steps or no steps were returned. Please try rephrasing your objective.", "error")
-                st.session_state.orchestrator_active = False
+            if not st.session_state.browser:
+                add_message("assistant", "Please start the browser first using the sidebar controls.", "error")
                 st.rerun()
                 return
 
-            add_message("assistant", f"✅ Steps generated: {len(generated_steps)} steps.", "success")
+            st.session_state.current_objective = user_input
+            # New Orchestrator Logic
+            st.session_state.orchestrator_active = True
+            st.session_state.automation_active = False
+            st.session_state.current_task_index = 0
+            st.session_state.execution_summary = []
 
-            # Populate todo.md
-            todo_manager.create_todo_file(user_input, generated_steps)
-            add_message("assistant", "💾 `todo.md` populated with generated steps.", "info")
+            add_message("assistant", f"Received new objective: {user_input}. Initializing orchestrator and planning steps...")
 
-            # Update Session State from todo.md
-            retrieved_todo = todo_manager.read_todo_file()
-            st.session_state.todo_objective = retrieved_todo.get("objective")
-            st.session_state.todo_tasks = retrieved_todo.get("tasks", [])
-            st.session_state.current_task_index = 0 # Start from the first task
-
-            # Display To-Do List
-            plan_display_intro = "**Planning Agent (Pixtral-Large-Latest) says:** Planning complete. Here's the initial plan:"
-            plan_display = f"{plan_display_intro}\n\n**Objective:** {st.session_state.todo_objective}\n\n"
-            plan_display += "**Tasks:**\n"
-            if st.session_state.todo_tasks:
-                for i, task_item in enumerate(st.session_state.todo_tasks):
-                    plan_display += f"- [ ] {task_item} \n"
-            else:
-                plan_display += "- No tasks defined yet."
-            add_message("assistant", plan_display, "plan")
-
-        except Exception as e:
-            error_msg = f"Error during planning phase: {str(e)}\n{traceback.format_exc()}"
-            add_message("assistant", error_msg, "error")
-            st.session_state.orchestrator_active = False
-
-        st.rerun()
-    
-    # Orchestrator Main Execution Loop
-    if st.session_state.get('orchestrator_active') and st.session_state.todo_tasks:
-        if not st.session_state.browser or not st.session_state.mistral_client:
-            add_message("assistant", "Browser or Mistral client not initialized. Orchestrator cannot proceed.", "error")
-            st.session_state.orchestrator_active = False
-            st.rerun()
-            return
-
-        task_idx = st.session_state.current_task_index
-        tasks = st.session_state.todo_tasks
-
-        if task_idx < len(tasks):
-            current_task = tasks[task_idx]
-            add_message("assistant", f"🚀 Executing Task {task_idx + 1}/{len(tasks)}: {current_task}", "info")
-
-            # A. Action Execution (using pixtral-large-latest for analyze_and_decide)
-            add_message("assistant", "🤔 Thinking on how to execute the current task...", "thinking")
-            annotated_image_path = take_screenshot_and_analyze()
-
-            if not annotated_image_path:
-                add_message("assistant", "Failed to get screenshot for action decision. Stopping.", "error")
-                st.session_state.orchestrator_active = False
-                st.rerun()
-                return
+            todo_manager.reset_todo_file(user_input)
+            add_message("assistant", f"📝 `todo.md` reset for objective: {user_input}", "info")
 
             try:
-                with open(annotated_image_path, 'rb') as img_file:
-                    image_data = base64.b64encode(img_file.read()).decode('utf-8')
-
-                # Model for determining browser actions: mistral-small-latest
-                action_decision_model = "mistral-small-latest"
-                # For current_objective, pass the overall objective to give context to analyze_and_decide
-                response = st.session_state.mistral_client.analyze_and_decide(
-                    image_data, current_task, model_name=action_decision_model, current_context=st.session_state.todo_objective
-                )
-
-                thinking = response.get('thinking', 'No reasoning provided for action.')
-                action_str = response.get('action', '')
-                add_message("assistant", f"**Action Model (Mistral-Small-Latest) Reasoning:** {thinking}", "thinking")
-
-                if not action_str:
-                    add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")
-                    # Potentially increment a retry counter for the task or stop
-                    st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": "No action determined"})
-                    st.rerun() # Re-run, might try same task if index not incremented
+                if not st.session_state.mistral_client:
+                    add_message("assistant", "Mistral client not initialized. Cannot generate steps.", "error")
+                    st.session_state.orchestrator_active = False
+                    st.rerun()
                     return
 
-                action_executed_successfully = execute_browser_action(action_str)
-                st.session_state.execution_summary.append({"task": current_task, "action": action_str, "executed": action_executed_successfully})
-                update_livestream_display() # Update after action
-
-                if not action_executed_successfully and action_str.lower() not in ['complete', 'done']:
-                     add_message("assistant", f"Action '{action_str}' failed to execute properly. Will re-evaluate.", "error")
-                     # Re-run will happen, and the same task will be picked up. analyze_state_vision will assess new state.
-
-            except Exception as e:
-                add_message("assistant", f"Error during action execution phase: {str(e)}\n{traceback.format_exc()}", "error")
-                st.session_state.orchestrator_active = False
-                st.rerun()
-                return
-
-            # B. State Analysis (using pixtral-large-latest for analyze_state_vision)
-            add_message("assistant", "🧐 Analyzing outcome of the action...", "info")
-            time.sleep(1) # Brief pause for page to potentially update after action
-            annotated_image_path_after_action = take_screenshot_and_analyze()
-
-            if not annotated_image_path_after_action:
-                add_message("assistant", "Failed to get screenshot for state analysis. Stopping.", "error")
-                st.session_state.orchestrator_active = False
-                st.rerun()
-                return
-            
-            try:
-                with open(annotated_image_path_after_action, 'rb') as img_file:
-                    image_data_after_action = base64.b64encode(img_file.read()).decode('utf-8')
-
-                # Model for vision analysis: pixtral-12b-2409
-                vision_model = "pixtral-12b-2409"
-                analysis_result = st.session_state.mistral_client.analyze_state_vision(
-                    image_data_after_action, current_task, st.session_state.todo_objective, model_name=vision_model
+                add_message("assistant", "🧠 Generating steps with pixtral-large-latest...", "info")
+                generated_steps = st.session_state.mistral_client.generate_steps_for_todo(
+                    user_prompt=user_input,
+                    model_name="pixtral-large-latest"
                 )
 
-                analysis_summary = analysis_result.get('summary', 'No analysis summary provided.')
-                add_message("assistant", f"**Vision Model (Pixtral-12B-2409) Analysis:** {analysis_summary}", "info")
-                st.session_state.execution_summary.append({"task": current_task, "vision_analysis": analysis_result})
-                update_livestream_display() # Update after analysis
-
-                # C. Decision Making
-                detected_error = analysis_result.get("error")
-                task_completed = analysis_result.get("task_completed", False)
-                objective_completed = analysis_result.get("objective_completed", False)
-
-                if detected_error and detected_error.lower() not in ["null", "none", ""]:
-                    add_message("assistant", f"⚠️ Error detected by vision model: {detected_error}. Stopping for now.", "error")
-                    # Future: Implement re-planning logic here.
+                if not generated_steps:
+                    add_message("assistant", "⚠️ Failed to generate steps or no steps were returned. Please try rephrasing your objective.", "error")
                     st.session_state.orchestrator_active = False
-                elif objective_completed:
-                    add_message("assistant", "🎉 Objective completed successfully!", "success")
-                    st.session_state.orchestrator_active = False
-                elif task_completed:
-                    add_message("assistant", f"✅ Task '{current_task}' marked as completed.", "success")
-                    st.session_state.current_task_index += 1
+                    st.rerun()
+                    return
+
+                add_message("assistant", f"✅ Steps generated: {len(generated_steps)} steps.", "success")
+
+                todo_manager.create_todo_file(user_input, generated_steps)
+                add_message("assistant", "💾 `todo.md` populated with generated steps.", "info")
+
+                retrieved_todo = todo_manager.read_todo_file()
+                st.session_state.todo_objective = retrieved_todo.get("objective")
+                st.session_state.todo_tasks = retrieved_todo.get("tasks", [])
+                st.session_state.current_task_index = 0
+
+                plan_display_intro = "**Planning Agent (Pixtral-Large-Latest) says:** Planning complete. Here's the initial plan:"
+                plan_display = f"{plan_display_intro}\n\n**Objective:** {st.session_state.todo_objective}\n\n"
+                plan_display += "**Tasks:**\n"
+                if st.session_state.todo_tasks:
+                    for i, task_item in enumerate(st.session_state.todo_tasks):
+                        plan_display += f"- [ ] {task_item} \n"
                 else:
-                    add_message("assistant", f"ℹ️ Task '{current_task}' not yet fully completed or action was part of a multi-step task. Will re-evaluate or proceed.", "info")
-                    # The loop will re-run with the same task_idx if not incremented,
-                    # or move to the next if incremented. analyze_and_decide should handle sub-steps.
-            
+                    plan_display += "- No tasks defined yet."
+                add_message("assistant", plan_display, "plan")
+
             except Exception as e:
-                add_message("assistant", f"Error during state analysis phase: {str(e)}\n{traceback.format_exc()}", "error")
+                error_msg = f"Error during planning phase: {str(e)}\n{traceback.format_exc()}"
+                add_message("assistant", error_msg, "error")
                 st.session_state.orchestrator_active = False
-
             st.rerun()
 
-        else: # All tasks processed (task_idx >= len(tasks))
-            add_message("assistant", "✅ All tasks from todo.md have been processed. Performing final verification.", "info")
-            # Perform a final vision analysis
-            final_annotated_image_path = take_screenshot_and_analyze()
-            if final_annotated_image_path:
+        # Orchestrator Main Execution Loop
+        # This logic, including its add_message calls, will render within main_col
+        # due to the `with main_col:` block above.
+        if st.session_state.get('orchestrator_active') and st.session_state.todo_tasks:
+            if not st.session_state.browser or not st.session_state.mistral_client:
+                add_message("assistant", "Browser or Mistral client not initialized. Orchestrator cannot proceed.", "error")
+                st.session_state.orchestrator_active = False
+                st.rerun()
+                return
+
+            task_idx = st.session_state.current_task_index
+            tasks = st.session_state.todo_tasks
+
+            if task_idx < len(tasks):
+                current_task = tasks[task_idx]
+                add_message("assistant", f"🚀 Executing Task {task_idx + 1}/{len(tasks)}: {current_task}", "info")
+
+                add_message("assistant", "🤔 Thinking on how to execute the current task...", "thinking")
+                annotated_image_path = take_screenshot_and_analyze()
+
+                if not annotated_image_path:
+                    add_message("assistant", "Failed to get screenshot for action decision. Stopping.", "error")
+                    st.session_state.orchestrator_active = False
+                    st.rerun()
+                    return
+
                 try:
-                    with open(final_annotated_image_path, 'rb') as img_file:
-                        final_image_data = base64.b64encode(img_file.read()).decode('utf-8')
+                    with open(annotated_image_path, 'rb') as img_file:
+                        image_data = base64.b64encode(img_file.read()).decode('utf-8')
 
-                    final_analysis = st.session_state.mistral_client.analyze_state_vision(
-                        final_image_data, "Final objective verification", st.session_state.todo_objective, model_name="pixtral-12b-2409" # Use updated vision model here too
+                    action_decision_model = "mistral-small-latest"
+                    response = st.session_state.mistral_client.analyze_and_decide(
+                        image_data, current_task, model_name=action_decision_model, current_context=st.session_state.todo_objective
                     )
-                    final_summary = final_analysis.get('summary', 'No final summary.')
-                    add_message("assistant", f"Final Check Summary: {final_summary}", "info")
-                    if final_analysis.get("objective_completed"):
-                        add_message("assistant", "🎉 Final verification confirms objective completed!", "success")
-                    else:
-                        add_message("assistant", "⚠️ Final verification suggests the objective may not be fully met.", "error")
-                    update_livestream_display()
-                except Exception as e:
-                    add_message("assistant", f"Error during final verification: {str(e)}", "error")
-            else:
-                add_message("assistant", "Could not take screenshot for final verification.", "error")
 
-            st.session_state.orchestrator_active = False
-            st.rerun()
+                    thinking = response.get('thinking', 'No reasoning provided for action.')
+                    action_str = response.get('action', '')
+                    add_message("assistant", f"**Action Model (Mistral-Small-Latest) Reasoning:** {thinking}", "thinking")
+
+                    if not action_str:
+                        add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")
+                        st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": "No action determined"})
+                        st.rerun()
+                        return
+
+                    action_executed_successfully = execute_browser_action(action_str)
+                    st.session_state.execution_summary.append({"task": current_task, "action": action_str, "executed": action_executed_successfully})
+                    update_livestream_display()
+
+                    if not action_executed_successfully and action_str.lower() not in ['complete', 'done']:
+                         add_message("assistant", f"Action '{action_str}' failed to execute properly. Will re-evaluate.", "error")
+
+                except Exception as e:
+                    add_message("assistant", f"Error during action execution phase: {str(e)}\n{traceback.format_exc()}", "error")
+                    st.session_state.orchestrator_active = False
+                    st.rerun()
+                    return
+
+                add_message("assistant", "🧐 Analyzing outcome of the action...", "info")
+                time.sleep(1)
+                annotated_image_path_after_action = take_screenshot_and_analyze()
+
+                if not annotated_image_path_after_action:
+                    add_message("assistant", "Failed to get screenshot for state analysis. Stopping.", "error")
+                    st.session_state.orchestrator_active = False
+                    st.rerun()
+                    return
+
+                try:
+                    with open(annotated_image_path_after_action, 'rb') as img_file:
+                        image_data_after_action = base64.b64encode(img_file.read()).decode('utf-8')
+
+                    vision_model = "pixtral-12b-2409"
+                    analysis_result = st.session_state.mistral_client.analyze_state_vision(
+                        image_data_after_action, current_task, st.session_state.todo_objective, model_name=vision_model
+                    )
+
+                    analysis_summary = analysis_result.get('summary', 'No analysis summary provided.')
+                    add_message("assistant", f"**Vision Model (Pixtral-12B-2409) Analysis:** {analysis_summary}", "info")
+                    st.session_state.execution_summary.append({"task": current_task, "vision_analysis": analysis_result})
+                    update_livestream_display()
+
+                    detected_error = analysis_result.get("error")
+                    task_completed = analysis_result.get("task_completed", False)
+                    objective_completed = analysis_result.get("objective_completed", False)
+
+                    if detected_error and detected_error.lower() not in ["null", "none", ""]:
+                        add_message("assistant", f"⚠️ Error detected by vision model: {detected_error}. Stopping for now.", "error")
+                        st.session_state.orchestrator_active = False
+                    elif objective_completed:
+                        add_message("assistant", "🎉 Objective completed successfully!", "success")
+                        st.session_state.orchestrator_active = False
+                    elif task_completed:
+                        add_message("assistant", f"✅ Task '{current_task}' marked as completed.", "success")
+                        st.session_state.current_task_index += 1
+                    else:
+                        add_message("assistant", f"ℹ️ Task '{current_task}' not yet fully completed or action was part of a multi-step task. Will re-evaluate or proceed.", "info")
+
+                except Exception as e:
+                    add_message("assistant", f"Error during state analysis phase: {str(e)}\n{traceback.format_exc()}", "error")
+                    st.session_state.orchestrator_active = False
+
+                st.rerun()
+
+            else:
+                add_message("assistant", "✅ All tasks from todo.md have been processed. Performing final verification.", "info")
+                final_annotated_image_path = take_screenshot_and_analyze()
+                if final_annotated_image_path:
+                    try:
+                        with open(final_annotated_image_path, 'rb') as img_file:
+                            final_image_data = base64.b64encode(img_file.read()).decode('utf-8')
+
+                        final_analysis = st.session_state.mistral_client.analyze_state_vision(
+                            final_image_data, "Final objective verification", st.session_state.todo_objective, model_name="pixtral-12b-2409"
+                        )
+                        final_summary = final_analysis.get('summary', 'No final summary.')
+                        add_message("assistant", f"Final Check Summary: {final_summary}", "info")
+                        if final_analysis.get("objective_completed"):
+                            add_message("assistant", "🎉 Final verification confirms objective completed!", "success")
+                        else:
+                            add_message("assistant", "⚠️ Final verification suggests the objective may not be fully met.", "error")
+                        update_livestream_display()
+                    except Exception as e:
+                        add_message("assistant", f"Error during final verification: {str(e)}", "error")
+                else:
+                    add_message("assistant", "Could not take screenshot for final verification.", "error")
+
+                st.session_state.orchestrator_active = False
+                st.rerun()
 
     # Auto-continue legacy automation if active (and orchestrator is not) - This part can be removed if legacy is fully deprecated.
     if st.session_state.get('automation_active') and not st.session_state.get('orchestrator_active'):
