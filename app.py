@@ -161,6 +161,13 @@ def setup_sidebar():
     api_status = "🟢 Connected" if st.session_state.mistral_client else "🔴 Not configured"
     st.sidebar.write(f"Mistral AI: {api_status}")
 
+    # Display Debug Log Expander in Sidebar
+    if 'debug_log_messages' in st.session_state and st.session_state.debug_log_messages:
+        with st.sidebar.expander("🔧 Debug Log", expanded=False):
+            st.sidebar.caption("Latest messages at the top:")
+            for msg in reversed(st.session_state.debug_log_messages):
+                st.sidebar.text(msg)
+
 def display_chat_history():
     """Display chat message history"""
     for message in st.session_state.messages:
@@ -563,11 +570,7 @@ def main():
     # Auto-continue legacy automation if active (and orchestrator is not) - This part can be removed if legacy is fully deprecated.
     # This part was removed in prior refactoring, so no st.rerun() here.
 
-    # Display Debug Log Expander
-    if 'debug_log_messages' in st.session_state and st.session_state.debug_log_messages:
-        with st.expander("🔧 Debug Log", expanded=False):
-            for msg in reversed(st.session_state.debug_log_messages): # Show newest first
-                st.text(msg)
+    # Debug Log Expander moved to setup_sidebar()
 
 if __name__ == "__main__":
     main()
