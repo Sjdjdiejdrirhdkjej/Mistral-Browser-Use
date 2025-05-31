@@ -53,17 +53,21 @@ def delete_screenshots(screenshot_dir: str):
 
 def initialize_session_state():
     """Initialize session state variables"""
-    delete_screenshots('screenshots/') # Delete existing screenshots
-
+    # This block now handles initialization for a truly new session
     if 'messages' not in st.session_state:
-        st.session_state.messages = []
-
-    # Filter out image messages from chat history
-    if 'messages' in st.session_state: # Should always be true due to above, but good practice
+        delete_screenshots('screenshots/') # Delete existing screenshots on new session
+        st.session_state.messages = [] # Initialize empty messages list
+        # Image messages would be empty at this point, so filtering is nominal
+        # but kept for logical consistency if messages were ever pre-populated by other means
+        # in a "new session" context before this specific line.
         st.session_state.messages = [
             msg for msg in st.session_state.messages if msg.get("type") != "image"
         ]
+        # Initialize other 'new session' specific variables here if needed
 
+    # Initialize other session state variables if they don't exist
+    # These might be initialized on first run or if they were cleared somehow,
+    # but not necessarily tied to the 'messages' key as a new session indicator.
     if 'browser' not in st.session_state:
         st.session_state.browser = None
     if 'mistral_client' not in st.session_state:
