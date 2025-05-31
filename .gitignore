@@ -1,0 +1,17 @@
+# Python cache
+__pycache__/
+
+# Downloaded binaries
+bin/
+
+# Log files
+geckodriver.log
+*.log
+
+# Screenshots directory - ignore its contents but not the directory itself
+# If you want to track the directory but not its contents:
+# screenshots/*
+# !screenshots/.gitkeep
+# For now, let's assume we might want to save some screenshots, so no general rule for screenshots/
+# but specific logs like geckodriver.log (if it appears in screenshots/) should be ignored.
+screenshots/geckodriver.log

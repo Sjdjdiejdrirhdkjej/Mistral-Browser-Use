@@ -7,6 +7,10 @@ from browser_automation import BrowserAutomation
 from mistral_client import MistralClient
 from element_detector import ElementDetector
 import traceback
+import setup_geckodriver # New import
+
+# Call the setup function early
+setup_geckodriver.download_and_install_geckodriver() # New call
 
 def initialize_session_state():
     """Initialize session state variables"""
