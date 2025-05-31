@@ -194,7 +194,7 @@ def execute_browser_action(action_str: str) -> bool:
                 raise ValueError(f"Invalid press_key action format: {action_str}")
 
         elif action_str_lower.startswith('navigate_to('):
-            match = re.search(r"navigate_to\(['\"](.*?)['"]\)", action_str, re.IGNORECASE)
+            match = re.search(r"navigate_to\(["'](.+?)["']\)", action_str, re.IGNORECASE)
             if match:
                 url_to_navigate = match.group(1)
                 # Basic URL validation (starts with http or https)
