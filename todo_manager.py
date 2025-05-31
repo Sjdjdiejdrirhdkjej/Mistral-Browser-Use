@@ -32,7 +32,7 @@ def read_todo_file():
                 continue
             if tasks_started and line.startswith("-"):
                 tasks.append(line[1:].strip())
-        
+
         return {"objective": objective, "tasks": tasks}
 
     except FileNotFoundError:

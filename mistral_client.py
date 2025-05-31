@@ -114,13 +114,13 @@ Analyze the provided screenshot and determine the single next action to take. Us
                 lines = content.split('\n')
                 thinking = "Failed to parse JSON, fallback attempt: " + content
                 action_str = "click(1)" # Default action on severe parsing failure
-                
+
                 for line_content in lines:
                     if 'thinking' in line_content.lower() and ':' in line_content:
                         thinking = line_content.split(':', 1)[1].strip().strip('"')
                     elif 'action' in line_content.lower() and ':' in line_content:
                         action_str = line_content.split(':', 1)[1].strip().strip('"')
-                
+
                 return {"thinking": thinking, "action": action_str}
 
         except requests.exceptions.Timeout:
@@ -204,7 +204,7 @@ Example for objective "Log into the website example.com and go to the dashboard"
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
-            
+
             payload = {
                 "model": model_name,
                 "messages": [
@@ -214,27 +214,27 @@ Example for objective "Log into the website example.com and go to the dashboard"
                 "temperature": 0.2, # Lower temperature for more deterministic, list-like output
                 "max_tokens": 1500
             }
-            
+
             response = requests.post(
                 f"{self.base_url}/chat/completions",
                 headers=headers,
                 json=payload,
                 timeout=45  # Increased timeout for potentially longer generation
             )
-            
+
             if response.status_code != 200:
                 # Consider logging the error response.text for debugging
                 print(f"API request failed for step generation: {response.status_code} - {response.text}")
                 return []
-            
+
             result = response.json()
-            
+
             if not result.get('choices') or not result['choices'][0].get('message') or not result['choices'][0]['message'].get('content'):
                 print("Unexpected API response structure for step generation.")
                 return []
-            
+
             content = result['choices'][0]['message']['content']
-            
+
             # Parse the model's response to extract steps
             steps = []
             for line in content.splitlines():
@@ -252,7 +252,7 @@ Example for objective "Log into the website example.com and go to the dashboard"
                     steps.append(line[3:].strip())
                 else:
                     steps.append(line) # Add as is if no common prefix
-            
+
             return steps
 
         except requests.exceptions.Timeout:
@@ -296,7 +296,7 @@ GUIDELINES:
 6.  The `summary` should be brief but informative, justifying your boolean decisions.
 7.  Strictly adhere to the JSON format. Ensure `task_completed` and `objective_completed` are actual boolean values (true/false), not strings. `error` must be a string or null.
 """
-        
+
         user_message_text = f"""CONTEXT FOR ANALYSIS:
 Current Task: "{current_task}"
 Overall Objective: "{objective}"
@@ -328,7 +328,7 @@ Provide your analysis STRICTLY in the specified JSON format.
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
-            
+
             payload = {
                 "model": model_name,
                 "messages": [
@@ -339,14 +339,14 @@ Provide your analysis STRICTLY in the specified JSON format.
                 "max_tokens": 1000,
                 "response_format": {"type": "json_object"} # Request JSON output
             }
-            
+
             response = requests.post(
                 f"{self.base_url}/chat/completions",
                 headers=headers,
                 json=payload,
                 timeout=30
             )
-            
+
             if response.status_code != 200:
                 print(f"API request failed for vision analysis: {response.status_code} - {response.text}")
                 # Try to get more details from response if possible
@@ -356,9 +356,9 @@ Provide your analysis STRICTLY in the specified JSON format.
                 except json.JSONDecodeError:
                      default_error_response["error"] = f"API Error: {response.status_code} - {response.text}"
                 return default_error_response
-            
+
             result_text = response.json()['choices'][0]['message']['content']
-            
+
             # The response should be a JSON string, parse it
             parsed_json = json.loads(result_text)
 

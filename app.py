@@ -254,7 +254,7 @@ def main():
         st.session_state.automation_active = False # Disable old automation loop
         st.session_state.current_task_index = 0 # Reset task index for new objective
         st.session_state.execution_summary = [] # Reset summary
-        
+
         add_message("assistant", f"Received new objective: {user_input}. Initializing orchestrator and planning steps...")
         
         # Reset todo.md
@@ -269,10 +269,10 @@ def main():
                 st.rerun()
                 return
 
-            add_message("assistant", "🧠 Generating steps with mistral-large-latest...", "info")
+            add_message("assistant", "🧠 Generating steps with pixtral-large-latest...", "info")
             generated_steps = st.session_state.mistral_client.generate_steps_for_todo(
-                user_prompt=user_input, 
-                model_name="mistral-large-latest" 
+                user_prompt=user_input,
+                model_name="pixtral-large-latest"
             )
 
             if not generated_steps:
@@ -294,12 +294,12 @@ def main():
             st.session_state.current_task_index = 0 # Start from the first task
 
             # Display To-Do List
-            plan_display_intro = "**Planning Agent (Mistral-Large) says:** Planning complete. Here's the initial plan:"
+            plan_display_intro = "**Planning Agent (Pixtral-Large-Latest) says:** Planning complete. Here's the initial plan:"
             plan_display = f"{plan_display_intro}\n\n**Objective:** {st.session_state.todo_objective}\n\n"
             plan_display += "**Tasks:**\n"
             if st.session_state.todo_tasks:
                 for i, task_item in enumerate(st.session_state.todo_tasks):
-                    plan_display += f"- [ ] {task_item} \n" 
+                    plan_display += f"- [ ] {task_item} \n"
             else:
                 plan_display += "- No tasks defined yet."
             add_message("assistant", plan_display, "plan")
@@ -309,7 +309,7 @@ def main():
             add_message("assistant", error_msg, "error")
             st.session_state.orchestrator_active = False
         
-        st.rerun() 
+        st.rerun()
     
     # Orchestrator Main Execution Loop
     if st.session_state.get('orchestrator_active') and st.session_state.todo_tasks:
@@ -339,18 +339,18 @@ def main():
             try:
                 with open(annotated_image_path, 'rb') as img_file:
                     image_data = base64.b64encode(img_file.read()).decode('utf-8')
-                
-                # Model for determining browser actions: ministral-8b-latest
-                action_decision_model = "ministral-8b-latest" 
+
+                # Model for determining browser actions: mistral-small-latest
+                action_decision_model = "mistral-small-latest"
                 # For current_objective, pass the overall objective to give context to analyze_and_decide
                 response = st.session_state.mistral_client.analyze_and_decide(
-                    image_data, current_task, model_name=action_decision_model, current_context=st.session_state.todo_objective 
+                    image_data, current_task, model_name=action_decision_model, current_context=st.session_state.todo_objective
                 )
-                
+
                 thinking = response.get('thinking', 'No reasoning provided for action.')
                 action_str = response.get('action', '')
-                add_message("assistant", f"**Action Model (Ministral-8B) Reasoning:** {thinking}", "thinking")
-                
+                add_message("assistant", f"**Action Model (Mistral-Small-Latest) Reasoning:** {thinking}", "thinking")
+
                 if not action_str:
                     add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")
                     # Potentially increment a retry counter for the task or stop
@@ -386,14 +386,14 @@ def main():
                 with open(annotated_image_path_after_action, 'rb') as img_file:
                     image_data_after_action = base64.b64encode(img_file.read()).decode('utf-8')
 
-                # Model for vision analysis: pixtral-large-latest
-                vision_model = "pixtral-large-latest"
+                # Model for vision analysis: pixtral-12b-2409
+                vision_model = "pixtral-12b-2409"
                 analysis_result = st.session_state.mistral_client.analyze_state_vision(
                     image_data_after_action, current_task, st.session_state.todo_objective, model_name=vision_model
                 )
-                
+
                 analysis_summary = analysis_result.get('summary', 'No analysis summary provided.')
-                add_message("assistant", f"**Vision Model (Pixtral) Analysis:** {analysis_summary}", "info")
+                add_message("assistant", f"**Vision Model (Pixtral-12B-2409) Analysis:** {analysis_summary}", "info")
                 st.session_state.execution_summary.append({"task": current_task, "vision_analysis": analysis_result})
 
                 # C. Decision Making
@@ -430,9 +430,9 @@ def main():
                 try:
                     with open(final_annotated_image_path, 'rb') as img_file:
                         final_image_data = base64.b64encode(img_file.read()).decode('utf-8')
-                    
+
                     final_analysis = st.session_state.mistral_client.analyze_state_vision(
-                        final_image_data, "Final objective verification", st.session_state.todo_objective, model_name="pixtral-large-latest"
+                        final_image_data, "Final objective verification", st.session_state.todo_objective, model_name="pixtral-12b-2409" # Use updated vision model here too
                     )
                     final_summary = final_analysis.get('summary', 'No final summary.')
                     add_message("assistant", f"Final Check Summary: {final_summary}", "info")
@@ -444,14 +444,14 @@ def main():
                     add_message("assistant", f"Error during final verification: {str(e)}", "error")
             else:
                 add_message("assistant", "Could not take screenshot for final verification.", "error")
-            
+
             st.session_state.orchestrator_active = False
             st.rerun()
 
     # Auto-continue legacy automation if active (and orchestrator is not) - This part can be removed if legacy is fully deprecated.
     if st.session_state.get('automation_active') and not st.session_state.get('orchestrator_active'):
         add_message("assistant", "Legacy automation loop triggered (should be deprecated).", "info")
-        time.sleep(1) 
+        time.sleep(1)
         st.rerun()
 
 
