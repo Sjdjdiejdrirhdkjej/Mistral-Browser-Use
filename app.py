@@ -194,9 +194,13 @@ def execute_browser_action(action_str: str) -> bool:
                 raise ValueError(f"Invalid press_key action format: {action_str}")
 
         elif action_str_lower.startswith('navigate_to('):
-            match = re.search(r"navigate_to\(["'](.+?)["']\)", action_str, re.IGNORECASE)
+            match = re.search(r"navigate_to\((?:"(.*?)"|'(.*?)')\)", action_str, re.IGNORECASE)
             if match:
-                url_to_navigate = match.group(1)
+                url_to_navigate = match.group(1) or match.group(2)
+                if not url_to_navigate: # Should not happen if regex matches, but good check
+                    add_message("assistant", f"Could not extract URL from navigate_to action: {action_str}", "error")
+                    return False
+
                 # Basic URL validation (starts with http or https)
                 if not (url_to_navigate.startswith("http://") or url_to_navigate.startswith("https://")):
                     add_message("assistant", f"Invalid URL format for navigation: {url_to_navigate}. Must start with http:// or https://", "error")
