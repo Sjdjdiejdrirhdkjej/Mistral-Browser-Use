@@ -17,6 +17,7 @@ def delete_screenshots(screenshot_dir: str):
     Handles cases where the directory might not exist or other IOErrors.
     Does not delete subdirectories, only files.
     """
+    print(f"DEBUG: delete_screenshots called for directory: {screenshot_dir}")
     if not os.path.exists(screenshot_dir):
         # Create the directory if it doesn't exist
         try:
@@ -35,6 +36,7 @@ def delete_screenshots(screenshot_dir: str):
         return
 
     try:
+        print(f"DEBUG: Found {len([name for name in os.listdir(screenshot_dir) if os.path.isfile(os.path.join(screenshot_dir, name))])} files in {screenshot_dir} before deletion attempt.")
         for filename in os.listdir(screenshot_dir):
             file_path = os.path.join(screenshot_dir, filename)
             try:
@@ -55,6 +57,7 @@ def initialize_session_state():
     """Initialize session state variables"""
     # This block now handles initialization for a truly new session
     if 'messages' not in st.session_state:
+        print("DEBUG: 'messages' not in st.session_state. Condition for new session met. Preparing to delete screenshots.")
         delete_screenshots('screenshots/') # Delete existing screenshots on new session
         st.session_state.messages = [] # Initialize empty messages list
         # Image messages would be empty at this point, so filtering is nominal
@@ -64,6 +67,8 @@ def initialize_session_state():
             msg for msg in st.session_state.messages if msg.get("type") != "image"
         ]
         # Initialize other 'new session' specific variables here if needed
+    else:
+        print("DEBUG: 'messages' found in st.session_state. Active session detected. Screenshot deletion will be skipped.")
 
     # Initialize other session state variables if they don't exist
     # These might be initialized on first run or if they were cleared somehow,
