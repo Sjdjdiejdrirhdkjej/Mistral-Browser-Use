@@ -422,8 +422,8 @@ def main():
                 with open(annotated_image_path, 'rb') as img_file:
                     image_data = base64.b64encode(img_file.read()).decode('utf-8')
 
-                # Model for determining browser actions: mistral-small-latest
-                action_decision_model = "mistral-small-latest"
+                # Model for determining browser actions: pixtral-large-2411
+                action_decision_model = "pixtral-large-2411"
                 # For current_objective, pass the overall objective to give context to analyze_and_decide
                 response = st.session_state.mistral_client.analyze_and_decide(
                     image_data, current_task, model_name=action_decision_model, current_context=st.session_state.todo_objective
@@ -431,7 +431,7 @@ def main():
 
                 thinking = response.get('thinking', 'No reasoning provided for action.')
                 action_str = response.get('action', '')
-                add_message("assistant", f"**Action Model (Mistral-Small-Latest) Reasoning:** {thinking}", "thinking")
+                add_message("assistant", f"**Action Model (Pixtral-Large-2411) Reasoning:** {thinking}", "thinking")
 
                 if not action_str:
                     add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")

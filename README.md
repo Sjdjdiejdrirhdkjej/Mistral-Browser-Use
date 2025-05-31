@@ -5,7 +5,7 @@ Have you always been limited to playwright on your mobile device? Try Mistral Br
 The application utilizes different Mistral AI models for various stages of its operation:
 
 *   **Planning (Step Generation):** `pixtral-large-latest` is used to analyze the user's objective and break it down into a sequence of actionable tasks (saved in `todo.md`).
-*   **Action Decision (Browser Interaction):** `mistral-small-latest` determines the specific browser action (e.g., click, type, navigate) to perform for the current task, based on the browser screenshot and task description.
+*   **Action Decision (Browser Interaction):** `pixtral-large-2411` determines the specific browser action (e.g., click, type, navigate) to perform for the current task, based on the browser screenshot and task description.
 *   **State Analysis (Vision Processing):** `pixtral-12b-2409` analyzes the browser screenshot after an action is taken to assess the outcome, verify task completion, or detect errors. This model is also used for the final verification of the overall objective.
 
 ## Setup
