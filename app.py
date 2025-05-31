@@ -11,64 +11,74 @@ import todo_manager # Added import
 import traceback
 import re # Added import
 
+# Max number of debug messages to keep in session state
+MAX_DEBUG_MESSAGES = 100
+
+def log_debug_message(message_str: str):
+    """Appends a debug message to st.session_state.debug_log_messages, capping the list size."""
+    if 'debug_log_messages' not in st.session_state:
+        st.session_state.debug_log_messages = []
+
+    st.session_state.debug_log_messages.append(message_str)
+
+    # Cap the list size
+    if len(st.session_state.debug_log_messages) > MAX_DEBUG_MESSAGES:
+        # Remove the oldest message(s)
+        st.session_state.debug_log_messages = st.session_state.debug_log_messages[-MAX_DEBUG_MESSAGES:]
+
 def delete_screenshots(screenshot_dir: str):
     """
     Deletes all files in the specified screenshot directory.
     Handles cases where the directory might not exist or other IOErrors.
     Does not delete subdirectories, only files.
     """
-    print(f"DEBUG: delete_screenshots called for directory: {screenshot_dir}")
+    log_debug_message(f"DEBUG: delete_screenshots called for directory: {screenshot_dir}")
     if not os.path.exists(screenshot_dir):
         # Create the directory if it doesn't exist
         try:
             os.makedirs(screenshot_dir)
-            print(f"Directory '{screenshot_dir}' created.")
-            # Or use add_message if appropriate in this context and available
-            # add_message("info", f"Directory '{screenshot_dir}' created as it was missing.")
+            # Using log_debug_message for internal logging now, not print
+            log_debug_message(f"Directory '{screenshot_dir}' created.")
         except OSError as e:
-            print(f"Error creating directory {screenshot_dir}: {e}")
-            # add_message("error", f"Error creating directory {screenshot_dir}: {e}")
+            log_debug_message(f"Error creating directory {screenshot_dir}: {e}")
         return # No files to delete if we just created it or it failed to be created
 
     if not os.path.isdir(screenshot_dir):
-        print(f"Error: {screenshot_dir} is not a directory.")
-        # add_message("error", f"Error: {screenshot_dir} is not a directory.")
+        log_debug_message(f"Error: {screenshot_dir} is not a directory.")
         return
 
     try:
-        print(f"DEBUG: Found {len([name for name in os.listdir(screenshot_dir) if os.path.isfile(os.path.join(screenshot_dir, name))])} files in {screenshot_dir} before deletion attempt.")
-        for filename in os.listdir(screenshot_dir):
+        # Count files accurately for the log
+        files_to_delete = [name for name in os.listdir(screenshot_dir) if os.path.isfile(os.path.join(screenshot_dir, name))]
+        log_debug_message(f"DEBUG: Found {len(files_to_delete)} files in {screenshot_dir} before deletion attempt.")
+        for filename in files_to_delete: # Iterate over the identified files
             file_path = os.path.join(screenshot_dir, filename)
             try:
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                    # print(f"Deleted {file_path}") # Optional: for logging
-                # elif os.path.isdir(file_path): # Uncomment if subdirectories should also be deleted
-                #     shutil.rmtree(file_path)
+                os.unlink(file_path)
+                # log_debug_message(f"Deleted {file_path}") # Optional: for detailed logging
             except Exception as e:
-                print(f"Failed to delete {file_path}. Reason: {e}")
-                # add_message("error", f"Failed to delete {file_path}. Reason: {e}")
-    except IOError as e:
-        print(f"Error accessing screenshot directory {screenshot_dir}: {e}")
-        # add_message("error", f"Error accessing screenshot directory {screenshot_dir}: {e}")
+                log_debug_message(f"Failed to delete {file_path}. Reason: {e}")
+    except IOError as e: # This might catch issues with os.listdir itself
+        log_debug_message(f"Error accessing screenshot directory {screenshot_dir} for listing: {e}")
 
 
 def initialize_session_state():
     """Initialize session state variables"""
+    if 'debug_log_messages' not in st.session_state:
+        st.session_state.debug_log_messages = []
+
     # This block now handles initialization for a truly new session
     if 'messages' not in st.session_state:
-        print("DEBUG: 'messages' not in st.session_state. Condition for new session met. Preparing to delete screenshots.")
+        log_debug_message("DEBUG_STATE: 'messages' not in st.session_state. Condition for new session met. Preparing to delete screenshots and clear image messages.")
         delete_screenshots('screenshots/') # Delete existing screenshots on new session
         st.session_state.messages = [] # Initialize empty messages list
         # Image messages would be empty at this point, so filtering is nominal
         # but kept for logical consistency if messages were ever pre-populated by other means
         # in a "new session" context before this specific line.
-        st.session_state.messages = [
-            msg for msg in st.session_state.messages if msg.get("type") != "image"
-        ]
+        # No need to filter an empty list: st.session_state.messages = [msg for msg in st.session_state.messages if msg.get("type") != "image"]
         # Initialize other 'new session' specific variables here if needed
     else:
-        print("DEBUG: 'messages' found in st.session_state. Active session detected. Screenshot deletion will be skipped.")
+        log_debug_message("DEBUG_STATE: 'messages' found in st.session_state. Active session detected. Screenshot deletion and image message clearing will be skipped.")
 
     # Initialize other session state variables if they don't exist
     # These might be initialized on first run or if they were cleared somehow,
@@ -309,7 +319,8 @@ def main():
     st.title("🤖 Web Automation Assistant")
     st.subheader("Powered by Mistral AI & Computer Vision")
     
-    initialize_session_state()
+    initialize_session_state() # Initialize session state first (this will setup debug_log_messages)
+    log_debug_message(f"DEBUG_STATE: At start of main(), 'messages' in session_state: {'messages' in st.session_state}")
     setup_sidebar()
     
     # Main chat interface
@@ -327,11 +338,13 @@ def main():
         # Check prerequisites
         if not st.session_state.mistral_client:
             add_message("assistant", "Please configure your Mistral AI API key in the sidebar first.", "error")
+            log_debug_message(f"DEBUG_STATE: Just before st.rerun() at API key prerequisite failed, 'messages' in session_state: {'messages' in st.session_state}")
             st.rerun()
             return # Add this if not already standard practice in the codebase for early exits
         
         if not st.session_state.browser:
             add_message("assistant", "Please start the browser first using the sidebar controls.", "error")
+            log_debug_message(f"DEBUG_STATE: Just before st.rerun() at Browser prerequisite failed, 'messages' in session_state: {'messages' in st.session_state}")
             st.rerun()
             return # Add this for consistency
 
@@ -353,6 +366,7 @@ def main():
             if not st.session_state.mistral_client:
                 add_message("assistant", "Mistral client not initialized. Cannot generate steps.", "error")
                 st.session_state.orchestrator_active = False
+                log_debug_message(f"DEBUG_STATE: Just before st.rerun() at planning, mistral client not init, 'messages' in session_state: {'messages' in st.session_state}")
                 st.rerun()
                 return
 
@@ -365,6 +379,7 @@ def main():
             if not generated_steps:
                 add_message("assistant", "⚠️ Failed to generate steps or no steps were returned. Please try rephrasing your objective.", "error")
                 st.session_state.orchestrator_active = False
+                log_debug_message(f"DEBUG_STATE: Just before st.rerun() at planning, no steps generated, 'messages' in session_state: {'messages' in st.session_state}")
                 st.rerun()
                 return
 
@@ -395,7 +410,9 @@ def main():
             error_msg = f"Error during planning phase: {str(e)}\n{traceback.format_exc()}"
             add_message("assistant", error_msg, "error")
             st.session_state.orchestrator_active = False
+            # Rerun is at the end of the if user_input block
 
+        log_debug_message(f"DEBUG_STATE: Just before st.rerun() after user_input block (planning attempt), 'messages' in session_state: {'messages' in st.session_state}")
         st.rerun()
     
     # Orchestrator Main Execution Loop
@@ -403,6 +420,7 @@ def main():
         if not st.session_state.browser or not st.session_state.mistral_client:
             add_message("assistant", "Browser or Mistral client not initialized. Orchestrator cannot proceed.", "error")
             st.session_state.orchestrator_active = False
+            log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator prerequisites failed, 'messages' in session_state: {'messages' in st.session_state}")
             st.rerun()
             return
 
@@ -420,6 +438,7 @@ def main():
             if not annotated_image_path:
                 add_message("assistant", "Failed to get screenshot for action decision. Stopping.", "error")
                 st.session_state.orchestrator_active = False
+                log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator action screenshot failed, 'messages' in session_state: {'messages' in st.session_state}")
                 st.rerun()
                 return
 
@@ -442,6 +461,7 @@ def main():
                     add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")
                     # Potentially increment a retry counter for the task or stop
                     st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": "No action determined"})
+                    log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator no action determined, 'messages' in session_state: {'messages' in st.session_state}")
                     st.rerun() # Re-run, might try same task if index not incremented
                     return
 
@@ -455,6 +475,7 @@ def main():
             except Exception as e:
                 add_message("assistant", f"Error during action execution phase: {str(e)}\n{traceback.format_exc()}", "error")
                 st.session_state.orchestrator_active = False
+                log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator action execution error, 'messages' in session_state: {'messages' in st.session_state}")
                 st.rerun()
                 return
 
@@ -466,6 +487,7 @@ def main():
             if not annotated_image_path_after_action:
                 add_message("assistant", "Failed to get screenshot for state analysis. Stopping.", "error")
                 st.session_state.orchestrator_active = False
+                log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator state analysis screenshot failed, 'messages' in session_state: {'messages' in st.session_state}")
                 st.rerun()
                 return
             
@@ -506,7 +528,9 @@ def main():
             except Exception as e:
                 add_message("assistant", f"Error during state analysis phase: {str(e)}\n{traceback.format_exc()}", "error")
                 st.session_state.orchestrator_active = False
+                # Rerun is at the end of the current task cycle block
 
+            log_debug_message(f"DEBUG_STATE: Just before st.rerun() after orchestrator task cycle (task_idx {task_idx}), 'messages' in session_state: {'messages' in st.session_state}")
             st.rerun()
 
         else: # All tasks processed (task_idx >= len(tasks))
@@ -533,14 +557,17 @@ def main():
                 add_message("assistant", "Could not take screenshot for final verification.", "error")
 
             st.session_state.orchestrator_active = False
+            log_debug_message(f"DEBUG_STATE: Just before st.rerun() after all tasks processed, 'messages' in session_state: {'messages' in st.session_state}")
             st.rerun()
 
     # Auto-continue legacy automation if active (and orchestrator is not) - This part can be removed if legacy is fully deprecated.
-    if st.session_state.get('automation_active') and not st.session_state.get('orchestrator_active'):
-        add_message("assistant", "Legacy automation loop triggered (should be deprecated).", "info")
-        time.sleep(1)
-        st.rerun()
+    # This part was removed in prior refactoring, so no st.rerun() here.
 
+    # Display Debug Log Expander
+    if 'debug_log_messages' in st.session_state and st.session_state.debug_log_messages:
+        with st.expander("🔧 Debug Log", expanded=False):
+            for msg in reversed(st.session_state.debug_log_messages): # Show newest first
+                st.text(msg)
 
 if __name__ == "__main__":
     main()
