@@ -21,6 +21,7 @@ AVAILABLE ACTIONS:
 - click(INDEX): Click on an element identified by its red numerical label (INDEX) in the screenshot.
 - type("TEXT_TO_TYPE", into="ELEMENT_DESCRIPTOR"): Type the specified TEXT_TO_TYPE into an input field. ELEMENT_DESCRIPTOR should be a concise description of the target input field, e.g., "username input", "search box with current value 'example'", "text field labeled 'Password'".
 - press_key("KEY_NAME"): Simulate pressing a special key. KEY_NAME must be one of: "enter", "escape", "tab". Use "enter" for submitting forms or search queries, "escape" for closing modals/dialogs, "tab" for navigating form elements.
+- navigate_to("URL_STRING"): Go to a specific web address. The URL_STRING should be the full address (e.g., "https://www.example.com").
 - COMPLETE: Use this action if the current user objective appears to be fully achieved based on the screenshot.
 
 RESPONSE FORMAT:

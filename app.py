@@ -192,12 +192,34 @@ def execute_browser_action(action_str: str) -> bool:
                 return True
             else:
                 raise ValueError(f"Invalid press_key action format: {action_str}")
+
+        elif action_str_lower.startswith('navigate_to('):
+            match = re.search(r"navigate_to\(['\"](.*?)['"]\)", action_str, re.IGNORECASE)
+            if match:
+                url_to_navigate = match.group(1)
+                # Basic URL validation (starts with http or https)
+                if not (url_to_navigate.startswith("http://") or url_to_navigate.startswith("https://")):
+                    add_message("assistant", f"Invalid URL format for navigation: {url_to_navigate}. Must start with http:// or https://", "error")
+                    return False
+
+                add_message("assistant", f"Navigating to: {url_to_navigate}", "action")
+                try:
+                    st.session_state.browser.navigate_to(url_to_navigate)
+                    add_message("assistant", f"Successfully navigated to {url_to_navigate}", "success")
+                    return True
+                except Exception as e:
+                    error_msg = f"Failed to navigate to {url_to_navigate}: {str(e)}"
+                    add_message("assistant", error_msg, "error")
+                    return False
+            else:
+                add_message("assistant", f"Invalid navigate_to action format: {action_str}", "error")
+                return False
         
         elif 'complete' in action_str_lower or 'done' in action_str_lower:
             # This action type signals overall completion, handled by orchestrator's decision logic.
             # For execute_browser_action, it means no direct browser op, but action is "valid".
             add_message("assistant", "Completion signal received.", "action")
-            return True # Or False, depending on if this should be a browser action
+            return True
         
         else:
             add_message("assistant", f"Unknown or malformed action: {action_str}", "error")
@@ -308,7 +330,7 @@ def main():
             error_msg = f"Error during planning phase: {str(e)}\n{traceback.format_exc()}"
             add_message("assistant", error_msg, "error")
             st.session_state.orchestrator_active = False
-        
+
         st.rerun()
     
     # Orchestrator Main Execution Loop
