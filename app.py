@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import shutil
 import time
 import base64
 from datetime import datetime
@@ -10,8 +11,50 @@ import todo_manager # Added import
 import traceback
 import re # Added import
 
+def delete_screenshots(screenshot_dir: str):
+    """
+    Deletes all files in the specified screenshot directory.
+    Handles cases where the directory might not exist or other IOErrors.
+    Does not delete subdirectories, only files.
+    """
+    if not os.path.exists(screenshot_dir):
+        # Create the directory if it doesn't exist
+        try:
+            os.makedirs(screenshot_dir)
+            print(f"Directory '{screenshot_dir}' created.")
+            # Or use add_message if appropriate in this context and available
+            # add_message("info", f"Directory '{screenshot_dir}' created as it was missing.")
+        except OSError as e:
+            print(f"Error creating directory {screenshot_dir}: {e}")
+            # add_message("error", f"Error creating directory {screenshot_dir}: {e}")
+        return # No files to delete if we just created it or it failed to be created
+
+    if not os.path.isdir(screenshot_dir):
+        print(f"Error: {screenshot_dir} is not a directory.")
+        # add_message("error", f"Error: {screenshot_dir} is not a directory.")
+        return
+
+    try:
+        for filename in os.listdir(screenshot_dir):
+            file_path = os.path.join(screenshot_dir, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                    # print(f"Deleted {file_path}") # Optional: for logging
+                # elif os.path.isdir(file_path): # Uncomment if subdirectories should also be deleted
+                #     shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Failed to delete {file_path}. Reason: {e}")
+                # add_message("error", f"Failed to delete {file_path}. Reason: {e}")
+    except IOError as e:
+        print(f"Error accessing screenshot directory {screenshot_dir}: {e}")
+        # add_message("error", f"Error accessing screenshot directory {screenshot_dir}: {e}")
+
+
 def initialize_session_state():
     """Initialize session state variables"""
+    delete_screenshots('screenshots/') # Delete existing screenshots
+
     if 'messages' not in st.session_state:
         st.session_state.messages = []
     if 'browser' not in st.session_state:
