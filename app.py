@@ -26,6 +26,8 @@ def initialize_session_state():
         st.session_state.current_objective = None
     if 'step_count' not in st.session_state: # Add this check
         st.session_state.step_count = 0    # Add this line
+    if 'livestream_placeholder' not in st.session_state:
+        st.session_state.livestream_placeholder = None
     # New orchestrator and todo state variables
     if 'todo_objective' not in st.session_state:
         st.session_state.todo_objective = None
@@ -69,6 +71,9 @@ def setup_sidebar():
             st.session_state.browser = BrowserAutomation()
             st.session_state.browser.start_browser()
             st.sidebar.success("✅ Browser started")
+            # Add this line to show initial page:
+            if st.session_state.livestream_placeholder: # Ensure placeholder exists
+                 update_livestream_display()
         except Exception as e:
             st.sidebar.error(f"❌ Failed to start browser: {str(e)}")
     
@@ -79,6 +84,9 @@ def setup_sidebar():
                 st.session_state.browser = None
                 st.session_state.automation_active = False
             st.sidebar.success("✅ Browser stopped")
+            # Add this to clear the image:
+            if st.session_state.livestream_placeholder: # Ensure placeholder exists
+                st.session_state.livestream_placeholder.empty()
         except Exception as e:
             st.sidebar.error(f"❌ Failed to stop browser: {str(e)}")
     
@@ -91,6 +99,10 @@ def setup_sidebar():
     
     api_status = "🟢 Connected" if st.session_state.mistral_client else "🔴 Not configured"
     st.sidebar.write(f"Mistral AI: {api_status}")
+
+    st.sidebar.divider()
+    st.sidebar.subheader("🌐 Browser Livestream")
+    st.session_state.livestream_placeholder = st.sidebar.empty()
 
 def display_chat_history():
     """Display chat message history"""
@@ -239,6 +251,25 @@ def execute_browser_action(action_str: str) -> bool:
 
 # Note: The old execute_automation_step is removed as its logic is refactored or moved.
 
+def update_livestream_display():
+    """Update the browser livestream display in the sidebar."""
+    if st.session_state.browser and st.session_state.get('livestream_placeholder'):
+        try:
+            # Ensure the browser is actually running (e.g. driver is not None)
+            if hasattr(st.session_state.browser, 'driver') and st.session_state.browser.driver:
+                screenshot_path = st.session_state.browser.take_screenshot()
+                if screenshot_path:
+                    st.session_state.livestream_placeholder.image(screenshot_path, use_column_width=True)
+            # else:
+                # Optionally, clear the placeholder if browser is not truly active
+                # st.session_state.livestream_placeholder.empty()
+        except Exception as e:
+            # Log error or display a message if needed, but avoid breaking the app
+            # print(f"Error updating livestream: {e}")
+            # For now, we can just pass or clear the image
+            st.session_state.livestream_placeholder.empty()
+            pass # Avoids spamming logs in Streamlit's loop if browser is closing
+
 def main():
     """Main application function"""
     st.set_page_config(
@@ -257,7 +288,8 @@ def main():
     st.write("Enter your automation objective and I'll help you navigate the web!")
     
     # Display chat history
-    display_chat_history()
+    display_chat_history() # Keep this before livestream update
+    update_livestream_display() # Add this call
     
     # User input
     user_input = st.chat_input("What would you like me to do on the web?")
@@ -388,6 +420,7 @@ def main():
 
                 action_executed_successfully = execute_browser_action(action_str)
                 st.session_state.execution_summary.append({"task": current_task, "action": action_str, "executed": action_executed_successfully})
+                update_livestream_display() # Update after action
 
                 if not action_executed_successfully and action_str.lower() not in ['complete', 'done']:
                      add_message("assistant", f"Action '{action_str}' failed to execute properly. Will re-evaluate.", "error")
@@ -423,6 +456,7 @@ def main():
                 analysis_summary = analysis_result.get('summary', 'No analysis summary provided.')
                 add_message("assistant", f"**Vision Model (Pixtral-12B-2409) Analysis:** {analysis_summary}", "info")
                 st.session_state.execution_summary.append({"task": current_task, "vision_analysis": analysis_result})
+                update_livestream_display() # Update after analysis
 
                 # C. Decision Making
                 detected_error = analysis_result.get("error")
@@ -468,6 +502,7 @@ def main():
                         add_message("assistant", "🎉 Final verification confirms objective completed!", "success")
                     else:
                         add_message("assistant", "⚠️ Final verification suggests the objective may not be fully met.", "error")
+                    update_livestream_display()
                 except Exception as e:
                     add_message("assistant", f"Error during final verification: {str(e)}", "error")
             else:
