@@ -106,6 +106,10 @@ def initialize_session_state():
         st.session_state.current_task_index = 0
     if 'execution_summary' not in st.session_state:
         st.session_state.execution_summary = []
+    if 'planning_requested' not in st.session_state:
+        st.session_state.planning_requested = False
+    if 'user_input_for_planning' not in st.session_state:
+        st.session_state.user_input_for_planning = None
     
 
 def setup_sidebar():
@@ -356,56 +360,75 @@ def main():
             add_message("assistant", "Please start the browser first using the sidebar controls.", "error")
             log_debug_message(f"DEBUG_STATE: Just before st.rerun() at Browser prerequisite failed, 'messages' in session_state: {'messages' in st.session_state}")
             st.rerun()
-            return # Add this for consistency
+            return
 
-        st.session_state.current_objective = user_input
-        # New Orchestrator Logic
-        st.session_state.orchestrator_active = True
-        st.session_state.automation_active = False # Disable old automation loop
-        st.session_state.current_task_index = 0 # Reset task index for new objective
-        st.session_state.execution_summary = [] # Reset summary
+        # Set flags for planning and store the input
+        st.session_state.user_input_for_planning = user_input
+        st.session_state.planning_requested = True
 
-        add_message("assistant", f"Received new objective: {user_input}. Initializing orchestrator and planning steps...")
+        # Reset orchestrator state for a new objective
+        st.session_state.orchestrator_active = False
+        st.session_state.todo_tasks = []
+        st.session_state.current_task_index = 0
+        st.session_state.execution_summary = []
+        # current_objective will be set once planning is complete from user_input_for_planning
+
+        log_debug_message(f"DEBUG_STATE: Just before st.rerun() after setting planning_requested, 'messages' in session_state: {'messages' in st.session_state}")
+        st.rerun()
+
+    # New block to handle planning if requested
+    if st.session_state.get('planning_requested'):
+        log_debug_message(f"DEBUG_STATE: Entered planning_requested block, 'messages' in session_state: {'messages' in st.session_state}")
+        # Consume the event
+        st.session_state.planning_requested = False
+        current_objective_for_planning = st.session_state.user_input_for_planning
+        st.session_state.user_input_for_planning = None # Clear it after use
+
+        # Initialize orchestrator flags
+        st.session_state.current_objective = current_objective_for_planning
+        # orchestrator_active will be set to True only after successful planning
+        st.session_state.automation_active = False # Ensure legacy automation is off
+        st.session_state.current_task_index = 0
+        st.session_state.execution_summary = []
+
+        add_message("assistant", f"Received new objective: {current_objective_for_planning}. Initializing orchestrator and planning steps...")
         
-        # Reset todo.md
-        todo_manager.reset_todo_file(user_input)
-        add_message("assistant", f"📝 `todo.md` reset for objective: {user_input}", "info")
+        todo_manager.reset_todo_file(current_objective_for_planning)
+        add_message("assistant", f"📝 `todo.md` reset for objective: {current_objective_for_planning}", "info")
 
-        # Generate Steps
         try:
-            if not st.session_state.mistral_client:
+            if not st.session_state.mistral_client: # This check is also in user_input, but good for safety
                 add_message("assistant", "Mistral client not initialized. Cannot generate steps.", "error")
-                st.session_state.orchestrator_active = False
-                log_debug_message(f"DEBUG_STATE: Just before st.rerun() at planning, mistral client not init, 'messages' in session_state: {'messages' in st.session_state}")
+                log_debug_message(f"DEBUG_STATE: Just before st.rerun() in planning_requested (Mistral client error), 'messages' in session_state: {'messages' in st.session_state}")
                 st.rerun()
                 return
 
             add_message("assistant", "🧠 Generating steps with pixtral-large-latest...", "info")
+            log_debug_message(f"DEBUG_MSG: Generating steps with pixtral-large-latest for objective: {current_objective_for_planning}")
+
             generated_steps = st.session_state.mistral_client.generate_steps_for_todo(
-                user_prompt=user_input,
+                user_prompt=current_objective_for_planning,
                 model_name="pixtral-large-latest"
             )
 
             if not generated_steps:
                 add_message("assistant", "⚠️ Failed to generate steps or no steps were returned. Please try rephrasing your objective.", "error")
-                st.session_state.orchestrator_active = False
-                log_debug_message(f"DEBUG_STATE: Just before st.rerun() at planning, no steps generated, 'messages' in session_state: {'messages' in st.session_state}")
+                log_debug_message(f"DEBUG_STATE: Just before st.rerun() in planning_requested (no steps generated), 'messages' in session_state: {'messages' in st.session_state}")
                 st.rerun()
                 return
 
             add_message("assistant", f"✅ Steps generated: {len(generated_steps)} steps.", "success")
+            log_debug_message(f"DEBUG_MSG: Steps generated: {len(generated_steps)} steps.")
 
-            # Populate todo.md
-            todo_manager.create_todo_file(user_input, generated_steps)
+            todo_manager.create_todo_file(current_objective_for_planning, generated_steps)
             add_message("assistant", "💾 `todo.md` populated with generated steps.", "info")
+            log_debug_message(f"DEBUG_MSG: todo.md populated with generated steps.")
 
-            # Update Session State from todo.md
             retrieved_todo = todo_manager.read_todo_file()
-            st.session_state.todo_objective = retrieved_todo.get("objective")
+            st.session_state.todo_objective = retrieved_todo.get("objective") # Should match current_objective_for_planning
             st.session_state.todo_tasks = retrieved_todo.get("tasks", [])
-            st.session_state.current_task_index = 0 # Start from the first task
+            st.session_state.current_task_index = 0
 
-            # Display To-Do List
             plan_display_intro = "**Planning Agent (Pixtral-Large-Latest) says:** Planning complete. Here's the initial plan:"
             plan_display = f"{plan_display_intro}\n\n**Objective:** {st.session_state.todo_objective}\n\n"
             plan_display += "**Tasks:**\n"
@@ -416,18 +439,19 @@ def main():
                 plan_display += "- No tasks defined yet."
             add_message("assistant", plan_display, "plan")
 
+            st.session_state.orchestrator_active = True # Activate orchestrator only after successful planning
+
         except Exception as e:
             error_msg = f"Error during planning phase: {str(e)}\n{traceback.format_exc()}"
             add_message("assistant", error_msg, "error")
-            st.session_state.orchestrator_active = False
-            # Rerun is at the end of the if user_input block
+            st.session_state.orchestrator_active = False # Ensure orchestrator is not active on error
 
-        log_debug_message(f"DEBUG_STATE: Just before st.rerun() after user_input block (planning attempt), 'messages' in session_state: {'messages' in st.session_state}")
+        log_debug_message(f"DEBUG_STATE: Just before st.rerun() at end of planning_requested block, orchestrator_active: {st.session_state.orchestrator_active}, 'messages' in session_state: {'messages' in st.session_state}")
         st.rerun()
-    
+
     # Orchestrator Main Execution Loop
     if st.session_state.get('orchestrator_active') and st.session_state.todo_tasks:
-        if not st.session_state.browser or not st.session_state.mistral_client:
+        if not st.session_state.browser or not st.session_state.mistral_client: # This check is also in user_input, but good for safety if state changes
             add_message("assistant", "Browser or Mistral client not initialized. Orchestrator cannot proceed.", "error")
             st.session_state.orchestrator_active = False
             log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator prerequisites failed, 'messages' in session_state: {'messages' in st.session_state}")
