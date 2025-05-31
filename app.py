@@ -197,7 +197,7 @@ def execute_browser_action(action_str: str) -> bool:
             match = re.search(r"navigate_to\(([^)]+)\)", action_str, re.IGNORECASE)
             if match:
                 url_with_quotes = match.group(1)
-                url_to_navigate = url_with_quotes.strip("'"'"") # Strips both single and double quotes
+                url_to_navigate = url_with_quotes.strip("'\"") # Correctly strips single and double quotes
 
                 if not url_to_navigate:
                     add_message("assistant", f"Could not extract URL from navigate_to action (after stripping): {action_str}", "error")
