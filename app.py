@@ -57,6 +57,13 @@ def initialize_session_state():
 
     if 'messages' not in st.session_state:
         st.session_state.messages = []
+
+    # Filter out image messages from chat history
+    if 'messages' in st.session_state: # Should always be true due to above, but good practice
+        st.session_state.messages = [
+            msg for msg in st.session_state.messages if msg.get("type") != "image"
+        ]
+
     if 'browser' not in st.session_state:
         st.session_state.browser = None
     if 'mistral_client' not in st.session_state:
