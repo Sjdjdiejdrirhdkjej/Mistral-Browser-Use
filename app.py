@@ -323,11 +323,14 @@ def main():
         layout="wide"
     )
     
+    # Log messages after st.set_page_config, as it must be the first Streamlit command.
+    # log_debug_message itself ensures 'debug_log_messages' is initialized in session_state.
+    log_debug_message(f"DEBUG_STATE: In main(), AFTER st.set_page_config(), 'messages' in session_state: {'messages' in st.session_state}")
+
     st.title("🤖 Web Automation Assistant")
     st.subheader("Powered by Mistral AI & Computer Vision")
     
-    initialize_session_state() # Initialize session state first (this will setup debug_log_messages)
-    log_debug_message(f"DEBUG_STATE: At start of main(), 'messages' in session_state: {'messages' in st.session_state}")
+    initialize_session_state() # Initializes 'messages' and other states.
     setup_sidebar()
     
     # Main chat interface
