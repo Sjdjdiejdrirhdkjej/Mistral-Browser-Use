@@ -30,11 +30,10 @@ AVAILABLE ACTIONS:
 - navigate_to("URL_STRING"): Go to a specific web address. The URL_STRING should be the full address (e.g., "https://www.example.com").
 - COMPLETE: Use this action if the current user objective appears to be fully achieved based on the screenshot.
 
-RESPONSE FORMAT:
-Respond with a JSON object matching this exact structure:
+YOUR RESPONSE MUST BE A VALID JSON OBJECT. IT MUST STRICTLY ADHERE TO THE FOLLOWING STRUCTURE AND FIELDS:
 {
-    "thinking": "Your detailed step-by-step reasoning. Explain what you observe in the screenshot, how it relates to the current objective and overall goal, and why you are choosing the specific action. If you are unsure, explain the ambiguity.",
-    "action": "The chosen action string. Examples: click(5), type('hello world', into='search input'), press_key('enter'), COMPLETE"
+    "thinking": "Your detailed step-by-step reasoning. Explain what you observe in the screenshot, how it relates to the current objective and overall goal, and why you are choosing the specific action. If you are unsure, explain the ambiguity. This field is mandatory.",
+    "action": "The chosen action string (e.g., click(5), type('hello world', into='search input'), press_key('enter'), COMPLETE). This field is mandatory."
 }
 
 GUIDELINES:
