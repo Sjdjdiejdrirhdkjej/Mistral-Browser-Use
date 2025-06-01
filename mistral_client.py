@@ -100,30 +100,15 @@ Analyze the provided screenshot and determine the single next action to take. Us
             # Try to parse as JSON
             try:
                 parsed_response = json.loads(content)
-                if 'thinking' in parsed_response and 'action' in parsed_response:
-                    return parsed_response
-            except json.JSONDecodeError:
+                # Check for required keys AFTER successful parsing
+                if not ('thinking' in parsed_response and 'action' in parsed_response):
+                    error_message = f"AI response content is valid JSON but missing required 'thinking' or 'action' keys. Parsed content: {parsed_response}"
+                    print(error_message) # Log the error and content
+                    raise Exception(error_message) # Raise an exception
+                return parsed_response # Return if all good
+            except json.JSONDecodeError: # Handles malformed JSON
                 print(f"JSONDecodeError in analyze_and_decide: Failed to parse content. Content: {content}")
                 raise Exception(f"Failed to parse AI response as JSON. Content: {content}")
-            
-            # If JSON parsing fails (it shouldn't with response_format set, but as a fallback)
-            # or if the response is not a JSON string, this will be caught by the outer try-except.
-            # The goal is to always return the expected dictionary structure if possible.
-            except json.JSONDecodeError as e:
-                # Log the content for debugging if parsing fails
-                print(f"JSONDecodeError in analyze_and_decide: {e}. Content: {content}")
-                # Fallback to manual extraction if absolutely necessary (should be rare)
-                lines = content.split('\n')
-                thinking = "Failed to parse JSON, fallback attempt: " + content
-                action_str = "click(1)" # Default action on severe parsing failure
-
-                for line_content in lines:
-                    if 'thinking' in line_content.lower() and ':' in line_content:
-                        thinking = line_content.split(':', 1)[1].strip().strip('"')
-                    elif 'action' in line_content.lower() and ':' in line_content:
-                        action_str = line_content.split(':', 1)[1].strip().strip('"')
-
-                return {"thinking": thinking, "action": action_str}
 
         except requests.exceptions.Timeout:
             # Specific exception for timeouts
