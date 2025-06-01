@@ -408,9 +408,30 @@ def execute_browser_action(action_str: str) -> bool:
                 else:
                     add_message("assistant", f"Invalid navigate_to action format for E2B: {action_str}", "error")
                     return False
+            elif action_str_lower.startswith('click_coordinates('):
+                match = re.search(r"click_coordinates\((\d+)\s*,\s*(\d+)\)", action_str_lower)
+                if match:
+                    x_coord = int(match.group(1))
+                    y_coord = int(match.group(2))
+                    add_message("assistant", f"E2B: Clicking at coordinates ({x_coord},{y_coord})", "action")
+                    try:
+                        st.session_state.e2b_automation_instance.click_at_coords(x_coord, y_coord) # type: ignore
+                        return True
+                    except Exception as e_click_coords:
+                        error_msg = f"E2B: Error during click_coordinates({x_coord},{y_coord}): {str(e_click_coords)}"
+                        add_message("assistant", error_msg, "error")
+                        return False
+                else:
+                    add_message("assistant", f"E2B: Invalid click_coordinates format: {action_str}. Expected 'click_coordinates(x,y)'.", "error")
+                    return False
             elif action_str_lower.startswith('click('):
-                add_message("assistant", f"E2B: Action '{action_str}' (click by index) is not directly supported. Clicks require coordinates (e.g., from visual analysis).", "info")
-                return False
+                # This existing 'click(description_or_index)' handler
+                add_message("assistant",
+                            f"E2B: Action '{action_str}' is not a supported click format for E2B mode. "
+                            "Please use 'click_coordinates(x,y)' after determining pixel coordinates from a screenshot. "
+                            "Descriptive clicks like 'click(button name)' or indexed clicks 'click(1)' are not supported in E2B mode.",
+                            "info")
+                return False # Indicate action was not successfully parsed or executed
             elif action_str_lower.startswith('type('):
                 match = re.search(r"type\(['\"](.*?)['\"](\s*,\s*into\s*=\s*['\"](.*?)['\"])?\)", action_str, re.IGNORECASE)
                 if match:
