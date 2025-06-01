@@ -1,8 +1,8 @@
 import os
-from e2b_desktop import Sandbox # Changed
-from PIL import Image # Added
-import io # Added
-# Execution type hint removed from original e2b_code_interpreter import
+from e2b_desktop import Sandbox
+from PIL import Image
+import io
+import time
 
 class E2BDesktopAutomation:
     def __init__(self, api_key: str = None):
@@ -12,84 +12,165 @@ class E2BDesktopAutomation:
 
         self.sandbox: Sandbox | None = None
         self._is_session_active = False
+        self.xvfb_process = None
+        self.display = ":1"
 
     def start_session(self):
         if self._is_session_active and self.sandbox:
             print("Session already active.")
             return
         try:
-            self.sandbox = Sandbox(api_key=self.api_key) # type: ignore Sandbox from e2b_desktop might have different type expectations
+            self.sandbox = Sandbox(api_key=self.api_key) # type: ignore
+
+            xvfb_command = f"Xvfb {self.display} -screen 0 1280x1024x24"
+            print(f"Starting Xvfb with command: {xvfb_command} ...")
+            try:
+                self.xvfb_process = self.sandbox.process.start( # type: ignore
+                    f"{xvfb_command}",
+                    on_stdout=lambda msg: print(f"Xvfb_stdout: {msg.line}"),
+                    on_stderr=lambda msg: print(f"Xvfb_stderr: {msg.line}"),
+                    timeout=5000
+                )
+                print(f"Xvfb process started (PID in sandbox: {self.xvfb_process.pid}). Waiting a moment for it to initialize...") # type: ignore
+                time.sleep(2)
+            except Exception as e_xvfb:
+                print(f"Failed to start Xvfb: {e_xvfb}. GUI operations may fail.")
+                self.xvfb_process = None
+
             self._is_session_active = True
-            print("E2B session started.")
+            print("E2B session started (Xvfb attempt completed).")
             self._ensure_tools()
+
         except Exception as e:
             self._is_session_active = False
-            print(f"Failed to start E2B session: {e}")
+            if self.sandbox and self.xvfb_process:
+                try:
+                    self.xvfb_process.kill() # type: ignore
+                except Exception as e_kill:
+                    print(f"Failed to kill Xvfb during error cleanup: {e_kill}")
+            if self.sandbox:
+                 try:
+                    self.sandbox.close() # type: ignore
+                 except Exception as e_close:
+                    print(f"Failed to close sandbox during error cleanup: {e_close}")
+            self.sandbox = None
+            self.xvfb_process = None
+            print(f"Failed to start E2B session fully: {e}")
             raise
 
     def _ensure_tools(self):
-        """Ensures necessary tools like firefox, xdotool, scrot are installed."""
         if not self.sandbox:
             print("Sandbox not initialized. Cannot install tools.")
             return
 
-        tools = ["firefox", "xdotool", "scrot"] # scrot is no longer needed if using self.sandbox.screenshot()
-        # Consider removing scrot or making its check/install conditional if other methods still use it.
-        # For now, keeping it as per previous structure, but it's unused by the new take_screenshot.
+        apt_tools = ["xvfb", "python3-pip", "firefox-esr"]
 
-        tools_to_check = ["firefox", "xdotool"] # Scrot check removed
-        if not self.uses_native_screenshot(): # Only check for scrot if not using native screenshot
-            tools_to_check.append("scrot")
-
-
-        for tool in tools_to_check:
-            # Assuming e2b_desktop.Sandbox has a compatible run_code or equivalent.
-            # This part might need adjustment based on e2b_desktop.Sandbox capabilities.
+        for tool in apt_tools:
             try:
-                # The run_code method might not exist or work the same way.
-                # This is a placeholder for how one might check for tools.
-                # For now, we'll assume it might fail gracefully or be adapted later.
-                print(f"Checking for tool: {tool} (Note: run_code compatibility with e2b_desktop.Sandbox TBD)")
-                check_process = self.sandbox.run_code(f"import shutil; print(shutil.which('{tool}'))") # type: ignore
-                stdout_result = "".join(m.line for m in check_process.results if hasattr(m, 'line')) # type: ignore
-                if stdout_result.strip() == "None" or not stdout_result.strip():
-                    print(f"{tool} not found, attempting to install...")
-                    self.run_shell_command(f"sudo apt-get update && sudo apt-get install -y {tool}")
-                    print(f"{tool} installed successfully.")
+                print(f"Checking for APT tool: {tool}")
+                tool_path_stdout, _ = self.run_shell_command(f"which {tool}", use_display=False)
+                if tool_path_stdout.strip():
+                    print(f"{tool} is already installed at: {tool_path_stdout.strip()}")
                 else:
-                    print(f"{tool} is already installed at: {stdout_result.strip()}")
-            except Exception as e_tool_check:
-                print(f"Could not check/install tool {tool}. It might be unavailable or run_code is incompatible: {e_tool_check}")
+                    print(f"{tool} not found by 'which', attempting install...")
+                    self.run_shell_command(f"sudo apt-get update && sudo apt-get install -y {tool}", use_display=False)
+                    print(f"{tool} installation attempted.")
+            except Exception as e_apt_check:
+                print(f"Attempting to install APT tool: {tool} (either 'which' failed or tool not found). Error context: {e_apt_check}")
+                try:
+                    self.run_shell_command(f"sudo apt-get update && sudo apt-get install -y {tool}", use_display=False)
+                    print(f"APT tool {tool} installed successfully after initial check/failure.")
+                except Exception as e_apt_install:
+                    print(f"Failed to install APT tool {tool}. Error: {e_apt_install}")
 
+        pip3_available = False
+        try:
+            pip3_path_stdout, _ = self.run_shell_command("which pip3", use_display=False)
+            if pip3_path_stdout.strip():
+                pip3_available = True
+                print(f"pip3 is available at: {pip3_path_stdout.strip()}")
+        except Exception:
+            print("pip3 not found via 'which' after apt installation attempt.")
+
+        if pip3_available:
+            print("Attempting to install pyautogui using pip3...")
+            pip_install_command = "pip3 install pyautogui"
+            try:
+                install_pyautogui_stdout, install_pyautogui_stderr = self.run_shell_command(pip_install_command, use_display=False)
+                print(f"pyautogui installation STDOUT: {install_pyautogui_stdout}")
+                if install_pyautogui_stderr and install_pyautogui_stderr.strip():
+                    print(f"pyautogui installation STDERR: {install_pyautogui_stderr.strip()}")
+                print("pyautogui installation command executed.")
+            except Exception as e_pip:
+                print(f"Failed to install pyautogui using pip3: {e_pip}")
+        else:
+            print("pip3 not found after apt checks. Cannot install pyautogui.")
 
     def close_session(self):
         if not self._is_session_active or not self.sandbox:
             print("Session not active or sandbox not initialized.")
             return
         try:
+            if self.xvfb_process:
+                print("Stopping Xvfb process...")
+                try:
+                    self.xvfb_process.kill() # type: ignore
+                    print("Xvfb process stop signal sent.")
+                except Exception as e_xvfb_stop:
+                    print(f"Error stopping Xvfb: {e_xvfb_stop}. It might remain running in the sandbox until sandbox closes.")
+                self.xvfb_process = None
+
             self.sandbox.close() # type: ignore
             self._is_session_active = False
             print("E2B session closed.")
         except Exception as e:
             print(f"Error closing E2B session: {e}")
 
-    def run_code_in_sandbox(self, code: str, timeout: int = 60) -> any: # Return type changed
+    def run_code_in_sandbox(self, code: str, timeout: int = 60, use_display: bool = False) -> any:
         if not self._is_session_active or not self.sandbox:
             raise Exception("E2B session not active. Cannot run code.")
-        print(f"Running code in sandbox: {code} (Note: run_code compatibility with e2b_desktop.Sandbox TBD)")
-        # Assuming e2b_desktop.Sandbox has a compatible run_code method.
-        execution = self.sandbox.run_code(code, timeout=timeout*1000) # type: ignore
-        if hasattr(execution, 'error') and execution.error: # Check if error attribute exists
+
+        env_vars = {}
+        if use_display and self.display:
+            env_vars["DISPLAY"] = self.display
+            print(f"Running code in sandbox with DISPLAY={self.display} for script: <see below>")
+            print(code) # Print the code separately for clarity
+        else:
+            print(f"Running code in sandbox for script: <see below>")
+            print(code)
+
+        execution = self.sandbox.run_code(code, timeout=timeout*1000, env_vars=env_vars) # type: ignore
+
+        # Process results for stdout/stderr from the new Execution structure
+        stdout = "".join(m.line for m in execution.results if hasattr(m, 'line')) # type: ignore
+        stderr = execution.error.value if hasattr(execution, 'error') and execution.error else "" # type: ignore
+
+        if stdout:
+            print(f"Script stdout: {stdout}")
+        if stderr: # This will print if execution.error is present
+             print(f"Script stderr (from error): {stderr}")
+        if hasattr(execution, 'error') and execution.error:
             print(f"Error during code execution: {execution.error.name} - {execution.error.value}") # type: ignore
             print(f"Traceback: {''.join(execution.error.traceback)}") # type: ignore
+
+        # Make the return more informative, similar to what app.py might expect from old run_code
+        # This is a placeholder; the actual structure of `execution` from e2b_desktop needs to be known.
+        # For now, returning the whole object.
         return execution
 
-    def run_shell_command(self, command: str, timeout: int = 60):
+
+    def run_shell_command(self, command: str, timeout: int = 60, use_display: bool = False):
         if not self.sandbox or not self._is_session_active:
             raise Exception("Sandbox not active.")
-        print(f"Running shell command: {command} (Note: process.start compatibility with e2b_desktop.Sandbox TBD)")
-        # Assuming e2b_desktop.Sandbox has a compatible process.start method.
-        proc = self.sandbox.process.start(command, timeout=timeout*1000) # type: ignore
+
+        full_command = command
+        if use_display and self.display:
+            full_command = f"export DISPLAY={self.display} && {command}"
+            print(f"Running shell command with DISPLAY={self.display}: {full_command}")
+        else:
+            print(f"Running shell command: {full_command}")
+
+        proc = self.sandbox.process.start(full_command, timeout=timeout*1000) # type: ignore
         proc.wait()
         output = "".join([msg.line for msg in proc.output_messages]) # type: ignore
         error_output = "".join([msg.line for msg in proc.error_messages]) # type: ignore
@@ -99,97 +180,145 @@ class E2BDesktopAutomation:
             raise Exception(f"Shell command failed with exit code {proc.exit_code}: {error_output}")
         return output, error_output
 
-    @staticmethod
-    def uses_native_screenshot() -> bool:
-        # Helper to check if we are using the new native screenshot method
-        return True # Since we just rewrote take_screenshot to use it
-
     def take_screenshot(self, output_filepath: str = "e2b_screenshot.png") -> str | None:
         if not self.sandbox or not self._is_session_active:
             print("Error: Sandbox not active. Cannot take screenshot.")
             return None
+        if not self.display:
+            print("Error: Display not configured (Xvfb likely not running). Cannot take screenshot.")
+            return None
 
         print("Attempting to take screenshot using e2b_desktop.Sandbox.screenshot()...")
         try:
-            image_bytes = self.sandbox.screenshot() # This is the new call # type: ignore
+            image_bytes = self.sandbox.screenshot() # type: ignore
 
             if not image_bytes:
                 print("Error: sandbox.screenshot() returned empty bytes.")
                 return None
 
             print(f"Screenshot captured successfully, {len(image_bytes)} bytes received.")
-
             image = Image.open(io.BytesIO(image_bytes))
-
             local_image_path = output_filepath
-            # Ensure directory exists if output_filepath contains a path
             os.makedirs(os.path.dirname(local_image_path) or '.', exist_ok=True)
             image.save(local_image_path)
-
             print(f"Screenshot saved locally to: {local_image_path}")
             return local_image_path
-
         except Exception as e:
             print(f"Error during e2b_desktop.screenshot() or image processing: {e}")
-            import traceback # Local import for traceback
+            import traceback
             print(traceback.format_exc())
             return None
 
-    def navigate_to(self, url: str):
+    def navigate_to(self, url: str): # Kept as is, uses firefox
         if not self._is_session_active:
             raise Exception("E2B session not active.")
-        command = f"setsid firefox '{url}' > /dev/null 2>&1 &"
-        print(f"Attempting to navigate to {url} using command: {command}")
+        if not self.display:
+            raise Exception("E2B display not available (Xvfb not running?).")
+        command = f"firefox '{url}'" # Removed setsid and backgrounding for now, rely on DISPLAY
+        print(f"Attempting to navigate to {url} using command (will use DISPLAY={self.display}): {command}")
         try:
-            proc = self.sandbox.process.start(command, timeout=10*1000) # type: ignore
-            print(f"Successfully initiated navigation to {url} (PID: {proc.pid if proc else 'unknown'}). Check E2B desktop.")
+            self.run_shell_command(command, timeout=20, use_display=True) # Increased timeout slightly
+            print(f"Firefox navigation command for {url} executed. Check E2B desktop.")
         except Exception as e:
-            print(f"Failed to navigate to {url}: {e}")
+            print(f"Failed to execute Firefox for navigation to {url}: {e}")
 
     def click_at_coords(self, x: int, y: int):
-        if not self._is_session_active:
+        if not self._is_session_active or not self.sandbox: # type: ignore
             raise Exception("E2B session not active.")
-        command = f"xdotool mousemove {x} {y} click 1"
-        print(f"Attempting to click at ({x},{y}) using command: {command}")
+        if not self.display:
+            raise Exception("E2B display not available (Xvfb not running?).")
+
+        py_script = f"""
+import pyautogui
+import os
+try:
+    print(f"PyAutoGUI: Executing click at ({x}, {y}) with DISPLAY={os.environ.get('DISPLAY')}")
+    pyautogui.moveTo({x}, {y}, duration=0.1)
+    pyautogui.click({x}, {y})
+    print(f"PyAutoGUI: Successfully clicked at ({x}, {y})")
+except Exception as e_click:
+    print(f"PyAutoGUI: Click failed: {{e_click}}")
+    raise
+"""
+        print(f"Attempting to click at ({x},{y}) using PyAutoGUI...")
         try:
-            self.run_shell_command(command)
-            print(f"Successfully clicked at ({x},{y}).")
+            execution_result = self.run_code_in_sandbox(py_script, use_display=True)
+            if execution_result and hasattr(execution_result, 'error') and execution_result.error:
+                print(f"PyAutoGUI click script execution failed (reported by run_code_in_sandbox).")
+            # Further stdout/stderr from script itself is now handled inside run_code_in_sandbox
         except Exception as e:
-            print(f"Failed to click at ({x},{y}): {e}")
+            print(f"Failed to execute PyAutoGUI click script: {e}")
 
     def type_text(self, text_to_type: str):
-        if not self._is_session_active:
+        if not self._is_session_active or not self.sandbox: # type: ignore
             raise Exception("E2B session not active.")
-        command = f"xdotool type --delay 100 '{text_to_type}'"
-        print(f"Attempting to type text: '{text_to_type}' using command: {command}")
+        if not self.display:
+            raise Exception("E2B display not available (Xvfb not running?).")
+
+        escaped_text = text_to_type.replace("'", "\\'")
+
+        py_script = f"""
+import pyautogui
+import os
+try:
+    print(f"PyAutoGUI: Executing type_text with DISPLAY={os.environ.get('DISPLAY')}")
+    pyautogui.write('{escaped_text}', interval=0.02)
+    print(f"PyAutoGUI: Successfully typed text.")
+except Exception as e_type:
+    print(f"PyAutoGUI: Write failed: {{e_type}}")
+    raise
+"""
+        print(f"Attempting to type text: '{text_to_type}' using PyAutoGUI...")
         try:
-            self.run_shell_command(command)
-            print(f"Successfully typed text.")
+            execution_result = self.run_code_in_sandbox(py_script, use_display=True)
+            if execution_result and hasattr(execution_result, 'error') and execution_result.error:
+                print(f"PyAutoGUI type script execution failed (reported by run_code_in_sandbox).")
         except Exception as e:
-            print(f"Failed to type text: {e}")
+            print(f"Failed to execute PyAutoGUI type script: {e}")
 
     def press_key(self, key_name: str):
-        if not self._is_session_active:
+        if not self._is_session_active or not self.sandbox: # type: ignore
             raise Exception("E2B session not active.")
-        command = f"xdotool key '{key_name}'"
-        print(f"Attempting to press key: '{key_name}' using command: {command}")
+        if not self.display:
+            raise Exception("E2B display not available (Xvfb not running?).")
+
+        key_map = {
+            "RETURN": "enter", "ENTER": "enter", "ESC": "escape",
+            "ESCAPE": "escape", "TAB": "tab",
+        }
+        pyautogui_key = key_map.get(key_name.upper(), key_name.lower())
+
+        py_script = f"""
+import pyautogui
+import os
+try:
+    print(f"PyAutoGUI: Executing press_key '{pyautogui_key}' with DISPLAY={os.environ.get('DISPLAY')}")
+    pyautogui.press('{pyautogui_key}')
+    print(f"PyAutoGUI: Successfully pressed key '{pyautogui_key}'.")
+except Exception as e_press:
+    print(f"PyAutoGUI: Press failed for key '{pyautogui_key}': {{e_press}}")
+    raise
+"""
+        print(f"Attempting to press key: '{key_name}' (as '{pyautogui_key}') using PyAutoGUI...")
         try:
-            self.run_shell_command(command)
-            print(f"Successfully pressed key '{key_name}'.")
+            execution_result = self.run_code_in_sandbox(py_script, use_display=True)
+            if execution_result and hasattr(execution_result, 'error') and execution_result.error:
+                print(f"PyAutoGUI press key script execution failed (reported by run_code_in_sandbox).")
         except Exception as e:
-            print(f"Failed to press key '{key_name}': {e}")
+            print(f"Failed to execute PyAutoGUI press key script: {e}")
 
 if __name__ == '__main__':
     print("Starting E2BDesktopAutomation Test Script...")
     e2b_auto = None
     try:
-        # Ensure E2B_API_KEY is set in your environment for this test to run.
         if not os.getenv("E2B_API_KEY"):
             print("CRITICAL: E2B_API_KEY environment variable not set. This test script requires it.")
         else:
             e2b_auto = E2BDesktopAutomation()
             e2b_auto.start_session()
             if e2b_auto._is_session_active and e2b_auto.sandbox:
+                print(f"Session started with display {e2b_auto.display} and Xvfb process {e2b_auto.xvfb_process}")
+
                 print("\nAttempting to take a screenshot (native):")
                 screenshot_file = e2b_auto.take_screenshot("test_native_screenshot.png")
                 if screenshot_file:
@@ -197,10 +326,26 @@ if __name__ == '__main__':
                 else:
                     print("Failed to get native screenshot.")
 
-                # Example: Run a simple shell command (ls)
-                print("\nRunning 'ls -la /tmp' in sandbox:")
-                ls_output, ls_error = e2b_auto.run_shell_command("ls -la /tmp")
-                # print(f"Output:\n{ls_output}")
+                print("\nTesting PyAutoGUI click (e.g., at 100,100):")
+                e2b_auto.click_at_coords(100, 100)
+                time.sleep(0.5) # Pause after action
+
+                print("\nTesting PyAutoGUI type_text (e.g., 'Hello E2B!'):")
+                e2b_auto.type_text("Hello E2B!")
+                time.sleep(0.5)
+
+                print("\nTesting PyAutoGUI press_key (e.g., 'Enter'):")
+                e2b_auto.press_key("Enter")
+                time.sleep(0.5)
+
+                # print("\nAttempting to navigate to a test page with Firefox:")
+                # e2b_auto.navigate_to("https://example.com")
+                # time.sleep(5) # Give time for firefox to open
+                # screenshot_after_nav = e2b_auto.take_screenshot("test_firefox_nav.png")
+                # if screenshot_after_nav:
+                #     print(f"Screenshot after Firefox navigation saved to: {screenshot_after_nav}")
+                # else:
+                #     print("Failed to get screenshot after Firefox navigation.")
 
             else:
                 print("Session could not be started or sandbox not available.")
