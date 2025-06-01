@@ -556,11 +556,11 @@ def main():
                 add_message("assistant", "Mistral client not initialized. Cannot generate steps.", "error")
                 st.rerun()
                 return
-            add_message("assistant", "🧠 Generating steps with pixtral-large-2411...", "info")
+            add_message("assistant", "🧠 Generating steps with pixtral-large-latest...", "info")
             selected_system_prompt = BROWSER_MODE_SYSTEM_PROMPT if st.session_state.execution_mode == "Browser Use" else E2B_MODE_SYSTEM_PROMPT
             generated_steps = st.session_state.mistral_client.generate_steps_for_todo( # type: ignore
                 user_prompt=current_objective_for_planning,
-                model_name="pixtral-large-2411",
+                model_name="pixtral-large-latest",
                 system_prompt_override=selected_system_prompt
             )
             if not generated_steps:
@@ -574,7 +574,7 @@ def main():
             st.session_state.todo_objective = retrieved_todo.get("objective")
             st.session_state.todo_tasks = retrieved_todo.get("tasks", [])
             st.session_state.current_task_index = 0
-            plan_display_intro = "**Planning Agent (Pixtral-Large-2411) says:** Planning complete. Here's the initial plan:"
+            plan_display_intro = "**Planning Agent (pixtral-large-latest) says:** Planning complete. Here's the initial plan:"
             plan_display = f"{plan_display_intro}\n\n**Objective:** {st.session_state.todo_objective}\n\n"
             plan_display += "**Tasks:**\n"
             if st.session_state.todo_tasks:
@@ -618,7 +618,7 @@ def main():
             try:
                 with open(annotated_image_path, 'rb') as img_file:
                     image_data = base64.b64encode(img_file.read()).decode('utf-8')
-                action_decision_model = "pixtral-large-latest"
+                action_decision_model = "pixtral-large-2411"
                 selected_system_prompt = BROWSER_MODE_SYSTEM_PROMPT if st.session_state.execution_mode == "Browser Use" else E2B_MODE_SYSTEM_PROMPT
                 response = st.session_state.mistral_client.analyze_and_decide( # type: ignore
                     image_data,
@@ -633,7 +633,7 @@ def main():
                 # Check for structured errors from analyze_and_decide
                 error_action_prefix = "ERROR_"
                 if action_str.startswith(error_action_prefix):
-                    add_message("assistant", f"**Action Model (pixtral-large-latest) Error:** {thinking}", "error") # Display thinking which now contains the error details
+                    add_message("assistant", f"**Action Model (pixtral-large-2411) Error:** {thinking}", "error") # Display thinking which now contains the error details
                     add_message("assistant", f"The AI model encountered an issue ({action_str}). Stopping current automation. Please review the error and consider trying again or modifying the objective.", "error")
                     st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": f"AI Error: {action_str}"})
                     if len(st.session_state.execution_summary) > MAX_EXECUTION_SUMMARY_ITEMS:
@@ -642,7 +642,7 @@ def main():
                     st.rerun()
                     return
 
-                add_message("assistant", f"**Action Model (pixtral-large-latest) Reasoning:** {thinking}", "thinking")
+                add_message("assistant", f"**Action Model (pixtral-large-2411) Reasoning:** {thinking}", "thinking")
                 if not action_str: # This case might be less likely if errors are caught above, but good for safety.
                     add_message("assistant", "No action could be determined by the AI model. Stopping current automation.", "error")
                     st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": "No action determined"})
