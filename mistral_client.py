@@ -11,11 +11,11 @@ class MistralClient:
         if not self.api_key:
             raise ValueError("Mistral API key is required")
     
-    def analyze_and_decide(self, image_base64, user_objective, model_name: str, current_context=None):
+    def analyze_and_decide(self, image_base64, user_objective, model_name: str, current_context=None, system_prompt_override: str | None = None):
         """Analyze screenshot and decide on next action"""
         
         # Construct the prompt for analysis
-        system_prompt = """You are an expert web automation assistant. Your task is to analyze the provided screenshot of a webpage and the current user objective, then decide the single next best action to take.
+        default_system_prompt = """You are an expert web automation assistant. Your task is to analyze the provided screenshot of a webpage and the current user objective, then decide the single next best action to take.
 
 AVAILABLE ACTIONS:
 - click(INDEX): Click on an element identified by its red numerical label (INDEX) in the screenshot.
@@ -57,7 +57,7 @@ Analyze the provided screenshot and determine the single next action to take. Us
                 "messages": [
                     {
                         "role": "system",
-                        "content": system_prompt
+                        "content": system_prompt_override if system_prompt_override else default_system_prompt
                     },
                     {
                         "role": "user",
@@ -166,7 +166,7 @@ Analyze the provided screenshot and determine the single next action to take. Us
         except Exception:
             return False
 
-    def generate_steps_for_todo(self, user_prompt: str, model_name: str) -> list[str]:
+    def generate_steps_for_todo(self, user_prompt: str, model_name: str, system_prompt_override: str | None = None) -> list[str]:
         """
         Generates a list of actionable steps for web automation based on a user prompt.
 
@@ -177,7 +177,7 @@ Analyze the provided screenshot and determine the single next action to take. Us
         Returns:
             A list of strings, where each string is a step. Returns an empty list if parsing fails.
         """
-        system_prompt = """You are an expert planning agent. Your primary function is to break down a user's high-level web automation objective into a detailed, ordered list of specific sub-tasks. These sub-tasks will be executed by an automation tool.
+        default_system_prompt = """You are an expert planning agent. Your primary function is to break down a user's high-level web automation objective into a detailed, ordered list of specific sub-tasks. These sub-tasks will be executed by an automation tool.
 
 GUIDELINES:
 1.  Analyze the user's objective carefully.
@@ -209,7 +209,7 @@ Example for objective "Log into the website example.com and go to the dashboard"
             payload = {
                 "model": model_name,
                 "messages": [
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": system_prompt_override if system_prompt_override else default_system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
                 "temperature": 0.2, # Lower temperature for more deterministic, list-like output

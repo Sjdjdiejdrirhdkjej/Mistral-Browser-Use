@@ -12,6 +12,39 @@ import todo_manager # Added import
 import traceback
 import re # Added import
 
+# System Prompts
+BROWSER_MODE_SYSTEM_PROMPT = """\
+You are an AI assistant helping a user automate tasks on a web page.
+You will be given screenshots of a web page with interactive elements (like buttons, links, input fields) annotated with numerical indices.
+Your goal is to achieve the user's objective by performing a sequence of actions.
+Available actions:
+- navigate_to("URL"): Navigates to the given URL.
+- click(index): Clicks the web element specified by its numerical index from the annotated screenshot.
+- type("text_to_type", into="index_of_input_field"): Types the given text into the specified input field.
+- press_key("key_name"): Simulates pressing a special key (e.g., 'Enter', 'Escape'). Common keys: enter, escape, tab.
+- complete(): Use this action when the objective is fully achieved.
+- done(): Use this action if you believe you are done with the current step or objective.
+Analyze the screenshot and the user's objective carefully. Provide your reasoning (thinking process) and then the single next action to perform."""
+
+E2B_MODE_SYSTEM_PROMPT = """\
+You are an AI assistant helping a user automate tasks on a general desktop computer environment.
+You will interact with this desktop by analyzing screenshots and deciding on actions to control the mouse and keyboard.
+Indexed elements like in web pages are NOT available.
+Your goal is to achieve the user's objective by performing a sequence of actions based on visual information from screenshots.
+Available actions:
+- navigate_to("URL"): Opens the Firefox browser (if available) and navigates to the given URL within the desktop environment.
+- click_coordinates(x,y): Moves the mouse to the specified pixel coordinates (x,y) on the screen and performs a left click. You MUST determine these coordinates by visually analyzing the provided screenshot. For example, if a button is at pixel (100,250), use click_coordinates(100,250).
+- type_text("text_to_type"): Types the given text at the current mouse cursor position or focused input field.
+- press_key("key_name"): Simulates pressing a special keyboard key. Common PyAutoGUI key names include: 'enter', 'esc', 'tab', 'left', 'right', 'up', 'down', 'ctrl', 'alt', 'shift', 'f1' through 'f12', etc.
+- complete(): Use this action when the overall objective is fully achieved.
+- done(): Use this action if you believe you are done with the current step or objective.
+Interaction Flow:
+1. You will be given an objective and a screenshot of the desktop.
+2. Analyze the screenshot to understand the current state.
+3. If you need to click something, determine its (x,y) pixel coordinates from the screenshot. If you cannot determine the coordinates or are unsure, you can state what you are looking for or ask for clarification, but your primary goal is to issue an action.
+4. Provide your reasoning (thinking process) and then the single next action to perform from the list above.
+5. After your action, a new screenshot will usually be taken and presented to you."""
+
 # Max number of debug messages to keep in session state (REMOVED)
 # MAX_DEBUG_MESSAGES = 100 (REMOVED)
 MAX_EXECUTION_SUMMARY_ITEMS = 20 # Cap for execution_summary
@@ -524,9 +557,11 @@ def main():
                 st.rerun()
                 return
             add_message("assistant", "🧠 Generating steps with pixtral-large-latest...", "info")
-            generated_steps = st.session_state.mistral_client.generate_steps_for_todo(
+            selected_system_prompt = BROWSER_MODE_SYSTEM_PROMPT if st.session_state.execution_mode == "Browser Use" else E2B_MODE_SYSTEM_PROMPT
+            generated_steps = st.session_state.mistral_client.generate_steps_for_todo( # type: ignore
                 user_prompt=current_objective_for_planning,
-                model_name="pixtral-large-latest"
+                model_name="pixtral-large-latest",
+                system_prompt_override=selected_system_prompt
             )
             if not generated_steps:
                 add_message("assistant", "⚠️ Failed to generate steps or no steps were returned. Please try rephrasing your objective.", "error")
@@ -584,8 +619,13 @@ def main():
                 with open(annotated_image_path, 'rb') as img_file:
                     image_data = base64.b64encode(img_file.read()).decode('utf-8')
                 action_decision_model = "pixtral-large-2411"
-                response = st.session_state.mistral_client.analyze_and_decide(
-                    image_data, current_task, model_name=action_decision_model, current_context=st.session_state.todo_objective
+                selected_system_prompt = BROWSER_MODE_SYSTEM_PROMPT if st.session_state.execution_mode == "Browser Use" else E2B_MODE_SYSTEM_PROMPT
+                response = st.session_state.mistral_client.analyze_and_decide( # type: ignore
+                    image_data,
+                    current_task,
+                    model_name=action_decision_model,
+                    current_context=st.session_state.todo_objective,
+                    system_prompt_override=selected_system_prompt
                 )
                 thinking = response.get('thinking', 'No reasoning provided for action.')
                 action_str = response.get('action', '')
