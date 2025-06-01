@@ -560,8 +560,8 @@ def main():
             selected_system_prompt = BROWSER_MODE_SYSTEM_PROMPT if st.session_state.execution_mode == "Browser Use" else E2B_MODE_SYSTEM_PROMPT
             generated_steps = st.session_state.mistral_client.generate_steps_for_todo( # type: ignore
                 user_prompt=current_objective_for_planning,
-                model_name="pixtral-large-latest",
-                system_prompt_override=selected_system_prompt
+                model_name="pixtral-large-latest", # Ensure this reflects the actual current model for planning
+                system_prompt_override=None # Corrected argument
             )
             if not generated_steps:
                 add_message("assistant", "⚠️ Failed to generate steps or no steps were returned. Please try rephrasing your objective.", "error")
