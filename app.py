@@ -19,6 +19,23 @@ MAX_CHAT_MESSAGES = 50 # Cap for chat messages
 
 # All functions log_debug_message, delete_screenshots, manage_on_disk_screenshots, get_current_screenshot_file_count are removed.
 
+def get_current_screenshot_file_count(directory: str = "screenshots/") -> int:
+    """Counts the number of files in the specified directory."""
+    if not os.path.isdir(directory):
+        print(f"Error: Directory '{directory}' not found or invalid for get_current_screenshot_file_count.")
+        return 0
+
+    count = 0
+    try:
+        for entry_name in os.listdir(directory):
+            full_path = os.path.join(directory, entry_name)
+            if os.path.isfile(full_path):
+                count += 1
+    except OSError as e:
+        print(f"Error listing directory '{directory}' for count: {e}")
+        return 0 # Return 0 as count is unreliable or directory became inaccessible
+    return count
+
 def clear_screenshots_directory_and_history(directory: str = "screenshots/"):
     """
     Deletes all files in the specified screenshot directory and clears image messages from chat history.
@@ -172,6 +189,10 @@ def setup_sidebar():
     st.sidebar.write(f"Mistral AI: {api_status}")
 
     # Debug Log Expander and Screenshot Count Display REMOVED from sidebar
+
+    st.sidebar.divider()
+    current_file_count = get_current_screenshot_file_count() # Uses default "screenshots/"
+    st.sidebar.caption(f"On-disk Screenshots: {current_file_count}")
 
     st.sidebar.divider()
     st.sidebar.subheader("Screenshot Management")
