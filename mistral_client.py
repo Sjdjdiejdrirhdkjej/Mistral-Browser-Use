@@ -103,7 +103,8 @@ Analyze the provided screenshot and determine the single next action to take. Us
                 if 'thinking' in parsed_response and 'action' in parsed_response:
                     return parsed_response
             except json.JSONDecodeError:
-                pass
+                print(f"JSONDecodeError in analyze_and_decide: Failed to parse content. Content: {content}")
+                raise Exception(f"Failed to parse AI response as JSON. Content: {content}")
             
             # If JSON parsing fails (it shouldn't with response_format set, but as a fallback)
             # or if the response is not a JSON string, this will be caught by the outer try-except.
