@@ -138,8 +138,8 @@ def initialize_session_state():
 
     # This block now handles initialization for a truly new session
     if 'messages' not in st.session_state:
-        log_debug_message("DEBUG_STATE: 'messages' not in st.session_state. Condition for new session met. Preparing to delete screenshots and clear image messages.")
-        delete_screenshots('screenshots/') # Delete existing screenshots on new session
+        log_debug_message("DEBUG_STATE: 'messages' not in st.session_state. Initializing 'messages' as new empty list.")
+        # delete_screenshots('screenshots/') # Removed as per instruction
         st.session_state.messages = [] # Initialize empty messages list
         # Image messages would be empty at this point, so filtering is nominal
         # but kept for logical consistency if messages were ever pre-populated by other means
@@ -147,7 +147,7 @@ def initialize_session_state():
         # No need to filter an empty list: st.session_state.messages = [msg for msg in st.session_state.messages if msg.get("type") != "image"]
         # Initialize other 'new session' specific variables here if needed
     else:
-        log_debug_message("DEBUG_STATE: 'messages' found in st.session_state. Active session detected. Screenshot deletion and image message clearing will be skipped.")
+        log_debug_message("DEBUG_STATE: 'messages' found in st.session_state. Active session detected. Screenshot deletion and image message clearing will be skipped.") # This log might need adjustment if the 'else' means something different now. For now, keeping as is.
 
     # Initialize other session state variables if they don't exist
     # These might be initialized on first run or if they were cleared somehow,
