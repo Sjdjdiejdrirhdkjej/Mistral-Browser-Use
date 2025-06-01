@@ -5,6 +5,7 @@ import time
 import base64
 from datetime import datetime
 from browser_automation import BrowserAutomation
+from e2b_automation import E2BDesktopAutomation # Added import
 from mistral_client import MistralClient
 from element_detector import ElementDetector
 import todo_manager # Added import
@@ -110,6 +111,8 @@ def initialize_session_state():
         st.session_state.execution_mode = "Browser Use"
     if 'browser' not in st.session_state:
         st.session_state.browser = None
+    if 'e2b_automation_instance' not in st.session_state: # Added for E2B
+        st.session_state.e2b_automation_instance = None
     if 'mistral_client' not in st.session_state:
         st.session_state.mistral_client = None
     if 'element_detector' not in st.session_state:
@@ -174,16 +177,24 @@ def setup_sidebar():
     if st.sidebar.button("🚀 Start Browser", disabled=st.session_state.automation_active):
         if st.session_state.execution_mode == "Browser Use":
             try:
-                st.session_state.browser = BrowserAutomation()
+                st.session_state.browser = BrowserAutomation() # Assuming BrowserAutomation is still used for this mode
                 st.session_state.browser.start_browser()
-                st.sidebar.success("✅ Browser started")
-                # automation_active is typically set by the browser start success
+                st.session_state.automation_active = True # Set active for browser mode
+                st.sidebar.success("✅ Browser started for Browser Use")
             except Exception as e:
                 st.sidebar.error(f"❌ Failed to start browser: {str(e)}")
         elif st.session_state.execution_mode == "E2B Desktop Computer Use":
-            st.sidebar.info("E2B Desktop mode selected. Manual start from E2B environment expected.")
-            # For E2B, we might not set st.session_state.browser or automation_active here.
-            # These could be set by a callback or a different mechanism once E2B confirms connection.
+            try:
+                # Ensure E2B_API_KEY is available (e.g., via env var)
+                if not os.getenv("E2B_API_KEY"):
+                    st.sidebar.error("❌ E2B_API_KEY environment variable not set.")
+                else:
+                    st.session_state.e2b_automation_instance = E2BDesktopAutomation()
+                    st.session_state.e2b_automation_instance.start_session()
+                    st.session_state.automation_active = True # Set active for E2B mode
+                    st.sidebar.success("✅ E2B Session started")
+            except Exception as e:
+                st.sidebar.error(f"❌ Failed to start E2B session: {str(e)}")
     
     if st.sidebar.button("🛑 Stop Browser", disabled=not st.session_state.automation_active):
         if st.session_state.execution_mode == "Browser Use":
@@ -191,21 +202,30 @@ def setup_sidebar():
                 if st.session_state.browser:
                     st.session_state.browser.close()
                     st.session_state.browser = None
-                    st.session_state.automation_active = False # Reset for Browser Use mode
-                st.sidebar.success("✅ Browser stopped")
+                st.session_state.automation_active = False
+                st.sidebar.success("✅ Browser stopped for Browser Use")
             except Exception as e:
                 st.sidebar.error(f"❌ Failed to stop browser: {str(e)}")
         elif st.session_state.execution_mode == "E2B Desktop Computer Use":
-            st.sidebar.info("E2B Desktop mode. Manual stop from E2B environment expected.")
-            st.session_state.browser = None # Ensure browser object is cleared
-            st.session_state.automation_active = False # Reset automation_active
+            try:
+                if st.session_state.e2b_automation_instance:
+                    st.session_state.e2b_automation_instance.close_session()
+                    st.session_state.e2b_automation_instance = None
+                st.session_state.automation_active = False
+                st.sidebar.success("✅ E2B Session stopped")
+            except Exception as e:
+                st.sidebar.error(f"❌ Failed to stop E2B session: {str(e)}")
     
     # Status indicators
     st.sidebar.divider()
     st.sidebar.subheader("Status")
     
-    browser_status = "🟢 Running" if st.session_state.browser and st.session_state.automation_active else "🔴 Stopped"
-    st.sidebar.write(f"Browser: {browser_status}")
+    if st.session_state.execution_mode == "Browser Use":
+        browser_status = "🟢 Running" if st.session_state.browser and st.session_state.automation_active else "🔴 Stopped"
+        st.sidebar.write(f"Browser: {browser_status}")
+    elif st.session_state.execution_mode == "E2B Desktop Computer Use":
+        e2b_status = "🟢 Running" if st.session_state.e2b_automation_instance and st.session_state.e2b_automation_instance._is_session_active else "🔴 Stopped"
+        st.sidebar.write(f"E2B Session: {e2b_status}")
     
     api_status = "🟢 Connected" if st.session_state.mistral_client else "🔴 Not configured"
     st.sidebar.write(f"Mistral AI: {api_status}")
@@ -282,17 +302,29 @@ def take_screenshot_and_analyze():
             add_message("assistant", error_msg, "error")
             return None
     elif st.session_state.execution_mode == "E2B Desktop Computer Use":
-        add_message("assistant", "Screenshot functionality for E2B mode is not yet implemented.", "info")
-        # For now, we can return a placeholder or None.
-        # If a placeholder image is desired:
-        # placeholder_path = "path/to/your/e2b_placeholder_image.png"
-        # if os.path.exists(placeholder_path):
-        #     add_message("assistant", placeholder_path, "image", "E2B Mode Active - No Preview")
-        #     return placeholder_path
-        # else:
-        #     add_message("assistant", "E2B placeholder image not found.", "error")
-        #     return None
-        return None
+        if st.session_state.e2b_automation_instance:
+            add_message("assistant", "Attempting to take screenshot via E2B...", "info")
+            # Define a path for the E2B screenshot within the Streamlit app's access
+            local_e2b_screenshot_path = "e2b_screenshot.png"
+            screenshot_path = st.session_state.e2b_automation_instance.take_screenshot(local_e2b_screenshot_path)
+            if screenshot_path:
+                add_message("assistant", screenshot_path, "image", "E2B Desktop Screenshot")
+                # Element detection might be challenging on raw desktop screenshots without prior knowledge of elements.
+                # For now, we'll pass it to the existing element detector.
+                # The ElementDetector might need to be adapted or bypassed for E2B if it relies on browser DOM structures.
+                annotated_image_path = st.session_state.element_detector.detect_and_annotate_elements(screenshot_path, None) # Pass None for browser if not applicable
+                if annotated_image_path != screenshot_path : # if annotation actually happened
+                        add_message("assistant", annotated_image_path, "image", "E2B Elements detected (if any)")
+                else: # No annotation happened or was same as input
+                    add_message("assistant", "Element detection on E2B screenshot may not be applicable or failed.", "info")
+
+                return annotated_image_path if annotated_image_path else screenshot_path
+            else:
+                add_message("assistant", "Failed to take E2B screenshot.", "error")
+                return None
+        else:
+            add_message("assistant", "E2B session not active. Cannot take screenshot.", "error")
+            return None
 
 def execute_browser_action(action_str: str) -> bool:
     """
@@ -382,10 +414,70 @@ def execute_browser_action(action_str: str) -> bool:
             add_message("assistant", error_msg, "error")
             return False
     elif st.session_state.execution_mode == "E2B Desktop Computer Use":
-        add_message("assistant", f"Action '{action_str}' for E2B mode is not yet implemented.", "info")
-        # Depending on how E2B actions are confirmed, this might return True if the message is sent to E2B,
-        # or False if it's purely a placeholder for now.
-        return False # Placeholder behavior: action not truly executed by this app.
+        if not st.session_state.e2b_automation_instance:
+            add_message("assistant", "E2B session not active. Cannot execute action.", "error")
+            return False
+
+        action_str_lower = action_str.lower()
+        try:
+            if action_str_lower.startswith('navigate_to('):
+                match = re.search(r"navigate_to\(([^)]+)\)", action_str, re.IGNORECASE)
+                if match:
+                    url_with_quotes = match.group(1)
+                    url_to_navigate = url_with_quotes.strip("'\"") # Keep simple strip
+                    if not (url_to_navigate.startswith("http://") or url_to_navigate.startswith("https://")):
+                            add_message("assistant", f"Invalid URL format for navigation: {url_to_navigate}. Must start with http:// or https://", "error")
+                            return False
+                    add_message("assistant", f"E2B: Navigating to {url_to_navigate}", "action")
+                    st.session_state.e2b_automation_instance.navigate_to(url_to_navigate)
+                    # Navigation in E2B is likely fire-and-forget from app.py's perspective for now
+                    return True
+                else:
+                    add_message("assistant", f"Invalid navigate_to action format for E2B: {action_str}", "error")
+                    return False
+            elif action_str_lower.startswith('click('):
+                # Click in E2B mode needs coordinates, not index.
+                # Example: click_at_coords(x, y)
+                # The current format click(index) is not directly usable.
+                # The AI model would need to provide coordinates based on the screenshot.
+                add_message("assistant", f"E2B: Action '{action_str}' (click by index) is not directly supported. Clicks require coordinates (e.g., from visual analysis).", "info")
+                # Placeholder: To make this actionable, the AI should propose e.g. "click_coordinates(100, 200)"
+                # For now, just acknowledge and don't break.
+                return False # Or True if we consider acknowledging it as "handled"
+            elif action_str_lower.startswith('type('):
+                # Type in E2B mode might not need a selector if it types at current focus.
+                # Example: type_text("hello world")
+                # The current format type('text', into='selector') needs adaptation.
+                match = re.search(r"type\(['\"](.*?)['\"](\s*,\s*into\s*=\s*['\"](.*?)['\"])?\)", action_str, re.IGNORECASE) # Made selector optional
+                if match:
+                    text_to_type = match.group(1)
+                    # Element description (selector group 3) is ignored in E2B for now.
+                    add_message("assistant", f"E2B: Typing text '{text_to_type}'. Target selector (if any) ignored.", "action")
+                    st.session_state.e2b_automation_instance.type_text(text_to_type)
+                    return True
+                else:
+                    add_message("assistant", f"Invalid type action format for E2B: {action_str}", "error")
+                    return False
+            elif action_str_lower.startswith('press_key('):
+                match = re.search(r"press_key\(['\"](.*?)['\"]\)", action_str_lower)
+                if match:
+                    key_name = match.group(1).lower()
+                    add_message("assistant", f"E2B: Pressing key '{key_name}'", "action")
+                    st.session_state.e2b_automation_instance.press_key(key_name)
+                    return True
+                else:
+                    add_message("assistant", f"Invalid press_key action format for E2B: {action_str}", "error")
+                    return False
+            elif 'complete' in action_str_lower or 'done' in action_str_lower:
+                add_message("assistant", "E2B: Completion signal received.", "action")
+                return True
+            else:
+                add_message("assistant", f"E2B: Unknown or malformed action: {action_str}", "error")
+                return False
+        except Exception as e:
+            error_msg = f"E2B: Error executing action '{action_str}': {str(e)}"
+            add_message("assistant", error_msg, "error")
+            return False
 
 # Note: The old execute_automation_step is removed as its logic is refactored or moved.
 
@@ -426,14 +518,17 @@ def main():
             st.rerun()
             return
         
-        if st.session_state.execution_mode == "E2B Desktop Computer Use":
-            add_message("assistant", "E2B Desktop Computer Use mode is active. Ensure your E2B environment is ready.", "info")
-            # In E2B mode, we might not strictly need st.session_state.browser to be set by *this* app's "Start Browser"
-            # The E2B environment itself might provide the browser or equivalent.
-        elif st.session_state.execution_mode == "Browser Use" and not st.session_state.browser:
-            add_message("assistant", "Please start the browser first using the sidebar controls.", "error")
-            st.rerun()
-            return
+        # Prerequisite check for browser/E2B session
+        if st.session_state.execution_mode == "Browser Use":
+            if not st.session_state.browser:
+                add_message("assistant", "Please start the browser first using the sidebar controls (Browser Use mode).", "error")
+                st.rerun()
+                return
+        elif st.session_state.execution_mode == "E2B Desktop Computer Use":
+            if not st.session_state.e2b_automation_instance or not st.session_state.e2b_automation_instance._is_session_active:
+                add_message("assistant", "Please start the E2B session first using the sidebar controls (E2B mode).", "error")
+                st.rerun()
+                return
 
         # Set flags for planning and store the input
         st.session_state.user_input_for_planning = user_input
@@ -524,12 +619,20 @@ def main():
 
     # Orchestrator Main Execution Loop
     if st.session_state.get('orchestrator_active') and st.session_state.todo_tasks:
-        if not st.session_state.browser or not st.session_state.mistral_client: # This check is also in user_input, but good for safety if state changes
-            add_message("assistant", "Browser or Mistral client not initialized. Orchestrator cannot proceed.", "error")
-            st.session_state.orchestrator_active = False
-            # log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator prerequisites failed, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
-            st.rerun()
-            return
+        # Check if Mistral client is available
+        if not st.session_state.mistral_client:
+            add_message("assistant", "Mistral client not initialized. Orchestrator cannot proceed.", "error")
+            st.session_state.orchestrator_active = False # Stop orchestrator
+            st.rerun(); return
+
+        # Check for browser/E2B session based on mode
+        if st.session_state.execution_mode == "Browser Use" and not st.session_state.browser:
+            add_message("assistant", "Browser session not active. Orchestrator cannot proceed.", "error")
+            st.session_state.orchestrator_active = False; st.rerun(); return
+        elif st.session_state.execution_mode == "E2B Desktop Computer Use" and \
+             (not st.session_state.e2b_automation_instance or not st.session_state.e2b_automation_instance._is_session_active):
+            add_message("assistant", "E2B session not active. Orchestrator cannot proceed.", "error")
+            st.session_state.orchestrator_active = False; st.rerun(); return
 
         task_idx = st.session_state.current_task_index
         tasks = st.session_state.todo_tasks
