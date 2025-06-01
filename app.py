@@ -1,6 +1,6 @@
 import streamlit as st
 import os
-import shutil
+# import shutil # Removed as it's no longer used
 import time
 import base64
 from datetime import datetime
@@ -11,143 +11,80 @@ import todo_manager # Added import
 import traceback
 import re # Added import
 
-# Max number of debug messages to keep in session state
-MAX_DEBUG_MESSAGES = 100
+# Max number of debug messages to keep in session state (REMOVED)
+# MAX_DEBUG_MESSAGES = 100 (REMOVED)
 MAX_EXECUTION_SUMMARY_ITEMS = 20 # Cap for execution_summary
 MAX_CHAT_MESSAGES = 50 # Cap for chat messages
-MAX_SCREENSHOT_FILES = 70 # Cap for on-disk screenshot files
+# MAX_SCREENSHOT_FILES = 70 (REMOVED)
 
-def log_debug_message(message_str: str):
-    """Appends a debug message to st.session_state.debug_log_messages, capping the list size."""
-    if 'debug_log_messages' not in st.session_state:
-        st.session_state.debug_log_messages = []
+# All functions log_debug_message, delete_screenshots, manage_on_disk_screenshots, get_current_screenshot_file_count are removed.
 
-    st.session_state.debug_log_messages.append(message_str)
-
-    # Cap the list size
-    if len(st.session_state.debug_log_messages) > MAX_DEBUG_MESSAGES:
-        # Remove the oldest message(s)
-        st.session_state.debug_log_messages = st.session_state.debug_log_messages[-MAX_DEBUG_MESSAGES:]
-
-def delete_screenshots(screenshot_dir: str):
+def clear_screenshots_directory_and_history(directory: str = "screenshots/"):
     """
-    Deletes all files in the specified screenshot directory.
-    Handles cases where the directory might not exist or other IOErrors.
-    Does not delete subdirectories, only files.
+    Deletes all files in the specified screenshot directory and clears image messages from chat history.
     """
-    log_debug_message(f"DEBUG: delete_screenshots called for directory: {screenshot_dir}")
-    if not os.path.exists(screenshot_dir):
-        # Create the directory if it doesn't exist
-        try:
-            os.makedirs(screenshot_dir)
-            # Using log_debug_message for internal logging now, not print
-            log_debug_message(f"Directory '{screenshot_dir}' created.")
-        except OSError as e:
-            log_debug_message(f"Error creating directory {screenshot_dir}: {e}")
-        return # No files to delete if we just created it or it failed to be created
-
-    if not os.path.isdir(screenshot_dir):
-        log_debug_message(f"Error: {screenshot_dir} is not a directory.")
-        return
-
-    try:
-        # Count files accurately for the log
-        files_to_delete = [name for name in os.listdir(screenshot_dir) if os.path.isfile(os.path.join(screenshot_dir, name))]
-        log_debug_message(f"DEBUG: Found {len(files_to_delete)} files in {screenshot_dir} before deletion attempt.")
-        for filename in files_to_delete: # Iterate over the identified files
-            file_path = os.path.join(screenshot_dir, filename)
-            try:
-                os.unlink(file_path)
-                # log_debug_message(f"Deleted {file_path}") # Optional: for detailed logging
-            except Exception as e:
-                log_debug_message(f"Failed to delete {file_path}. Reason: {e}")
-    except IOError as e: # This might catch issues with os.listdir itself
-        log_debug_message(f"Error accessing screenshot directory {screenshot_dir} for listing: {e}")
-
-def manage_on_disk_screenshots(target_directory: str, maximum_files: int):
-    """
-    Manages the number of screenshot files in a directory, deleting the oldest if max_files is exceeded.
-    """
-    if not os.path.isdir(target_directory):
-        log_debug_message(f"DEBUG: manage_on_disk_screenshots: Directory '{target_directory}' not found or invalid.")
-        return
-
-    file_metadata_list = []
-    try:
-        for entry_name in os.listdir(target_directory):
-            full_file_path = os.path.join(target_directory, entry_name)
-            if os.path.isfile(full_file_path):
-                try:
-                    mod_time = os.path.getmtime(full_file_path)
-                    file_metadata_list.append((full_file_path, mod_time))
-                except OSError as e: # Handles issues like file vanishing during listdir and getmtime
-                    log_debug_message(f"DEBUG: manage_on_disk_screenshots: Error getting mtime for '{full_file_path}'. Reason: {e}")
-    except OSError as e:
-        log_debug_message(f"ERROR: manage_on_disk_screenshots: Could not list directory '{target_directory}'. Reason: {e}")
-        return
-
-    current_file_count = len(file_metadata_list)
-    log_debug_message(f"DEBUG: manage_on_disk_screenshots: Found {current_file_count} files in '{target_directory}'. Max allowed: {maximum_files}.")
-
-    if current_file_count <= maximum_files:
-        return
-
-    # Sort files by modification time (oldest first)
-    file_metadata_list.sort(key=lambda x: x[1])
-
-    files_to_remove_count = current_file_count - maximum_files
-    paths_to_delete = [item[0] for item in file_metadata_list[:files_to_remove_count]]
-
-    successfully_deleted_count = 0
-    failed_to_delete_count = 0
-    log_debug_message(f"DEBUG: manage_on_disk_screenshots: Attempting to delete {files_to_remove_count} oldest files from '{target_directory}'.")
-
-    for file_path_to_delete in paths_to_delete:
-        try:
-            os.remove(file_path_to_delete)
-            successfully_deleted_count += 1
-        except OSError as e:
-            failed_to_delete_count += 1
-            log_debug_message(f"ERROR: manage_on_disk_screenshots: Failed to delete '{file_path_to_delete}'. Reason: {e}")
-
-    log_debug_message(f"INFO: manage_on_disk_screenshots: Finished. Deleted {successfully_deleted_count} files. Failed to delete {failed_to_delete_count} files from '{target_directory}'.")
-
-
-def get_current_screenshot_file_count(directory: str = "screenshots/") -> int:
-    """Counts the number of files in the specified directory."""
+    # Clear directory
     if not os.path.isdir(directory):
-        log_debug_message(f"DEBUG: get_current_screenshot_file_count: Directory '{directory}' not found or invalid.")
-        return 0
+        add_message("assistant", f"Error: Screenshot directory '{directory}' not found.", "error")
+        # No need to clear image messages if the primary action (dir clearing) has an issue with dir existence.
+        return
 
-    count = 0
+    deleted_files_count = 0
+    failed_files_count = 0
+
     try:
-        for entry_name in os.listdir(directory):
-            full_file_path = os.path.join(directory, entry_name)
-            if os.path.isfile(full_file_path):
-                count += 1
-    except OSError as e:
-        log_debug_message(f"ERROR: get_current_screenshot_file_count: Could not list directory '{directory}'. Reason: {e}")
-        return 0 # Return 0 as count is unreliable or directory became inaccessible
-    return count
+        for filename in os.listdir(directory):
+            file_path = os.path.join(directory, filename)
+            if os.path.isfile(file_path):
+                try:
+                    os.remove(file_path)
+                    deleted_files_count += 1
+                except Exception as e_remove:
+                    failed_files_count += 1
+                    print(f"Error deleting file {file_path}: {e_remove}") # Log to console for server-side debug
+
+        if deleted_files_count > 0:
+            add_message("assistant", f"Successfully deleted {deleted_files_count} screenshot(s) from '{directory}'.", "info")
+        elif failed_files_count == 0 and deleted_files_count == 0: # No files to delete and no failures
+            add_message("assistant", f"Screenshot directory '{directory}' was already empty.", "info")
+
+        if failed_files_count > 0:
+            add_message("assistant", f"Failed to delete {failed_files_count} file(s) from '{directory}'. Check server logs.", "error")
+
+    except OSError as e_list:
+        add_message("assistant", f"Error accessing screenshot directory '{directory}': {e_list}", "error")
+        # Proceed to clear history even if directory access failed, as they are separate concerns.
+
+    # Clear image messages from chat history
+    if 'messages' in st.session_state:
+        initial_message_count = len(st.session_state.messages)
+        st.session_state.messages = [msg for msg in st.session_state.messages if msg.get("type") != "image"]
+        messages_cleared_count = initial_message_count - len(st.session_state.messages)
+        if messages_cleared_count > 0:
+            add_message("assistant", f"{messages_cleared_count} image message(s) cleared from chat history.", "info")
+        elif deleted_files_count == 0 and failed_files_count == 0: # If dir was empty, and no image messages
+             pass # Avoid redundant "no image messages" if dir was also empty.
+        else: # If dir had files, or errors, but no image messages
+            add_message("assistant", "No image messages found in chat history to clear.", "info")
 
 
 def initialize_session_state():
     """Initialize session state variables"""
-    if 'debug_log_messages' not in st.session_state:
-        st.session_state.debug_log_messages = []
+    # if 'debug_log_messages' not in st.session_state: (REMOVED)
+    #     st.session_state.debug_log_messages = [] (REMOVED)
 
     # This block now handles initialization for a truly new session
     if 'messages' not in st.session_state:
-        log_debug_message("DEBUG_STATE: 'messages' not in st.session_state. Initializing 'messages' as new empty list.")
-        # delete_screenshots('screenshots/') # Removed as per instruction
+        # log_debug_message("DEBUG_STATE: 'messages' not in st.session_state. Initializing 'messages' as new empty list.") (REMOVED)
+        # delete_screenshots('screenshots/') # Removed as per instruction (ALREADY REMOVED)
         st.session_state.messages = [] # Initialize empty messages list
         # Image messages would be empty at this point, so filtering is nominal
         # but kept for logical consistency if messages were ever pre-populated by other means
         # in a "new session" context before this specific line.
         # No need to filter an empty list: st.session_state.messages = [msg for msg in st.session_state.messages if msg.get("type") != "image"]
         # Initialize other 'new session' specific variables here if needed
-    else:
-        log_debug_message("DEBUG_STATE: 'messages' found in st.session_state. Active session detected. Screenshot deletion and image message clearing will be skipped.") # This log might need adjustment if the 'else' means something different now. For now, keeping as is.
+    # else: (REMOVED log_debug_message call from here too)
+        # log_debug_message("DEBUG_STATE: 'messages' found in st.session_state. Active session detected. Screenshot deletion and image message clearing will be skipped.") (REMOVED)
 
     # Initialize other session state variables if they don't exist
     # These might be initialized on first run or if they were cleared somehow,
@@ -234,16 +171,13 @@ def setup_sidebar():
     api_status = "🟢 Connected" if st.session_state.mistral_client else "🔴 Not configured"
     st.sidebar.write(f"Mistral AI: {api_status}")
 
-    # Display Debug Log Expander in Sidebar (existing)
-    if 'debug_log_messages' in st.session_state and st.session_state.debug_log_messages:
-        with st.sidebar.expander("🔧 Debug Log", expanded=False):
-            st.sidebar.caption("Latest messages at the top:")
-            for msg in reversed(st.session_state.debug_log_messages):
-                st.sidebar.text(msg)
+    # Debug Log Expander and Screenshot Count Display REMOVED from sidebar
 
-    st.sidebar.divider() # Separator for the new info
-    current_file_count = get_current_screenshot_file_count() # Uses default "screenshots/"
-    st.sidebar.caption(f"On-disk Screenshots: {current_file_count}")
+    st.sidebar.divider()
+    st.sidebar.subheader("Screenshot Management")
+    if st.sidebar.button("⚠️ Delete All Screenshots Now"):
+        clear_screenshots_directory_and_history() # Uses default "screenshots/"
+        st.rerun()
 
 def display_chat_history():
     """Display chat message history"""
@@ -298,8 +232,8 @@ def take_screenshot_and_analyze():
         add_message("assistant", annotated_image_path, "image", "Elements detected and indexed")
         
         # Manage screenshot files after successful operations in try block
-        manage_on_disk_screenshots("screenshots/", MAX_SCREENSHOT_FILES)
-        log_debug_message(f"DEBUG: Called manage_on_disk_screenshots from try block in take_screenshot_and_analyze.")
+        # manage_on_disk_screenshots("screenshots/", MAX_SCREENSHOT_FILES) # REMOVED
+        # log_debug_message(f"DEBUG: Called manage_on_disk_screenshots from try block in take_screenshot_and_analyze.") # REMOVED
 
         return annotated_image_path
         
@@ -307,8 +241,8 @@ def take_screenshot_and_analyze():
         error_msg = f"Failed to take screenshot: {str(e)}"
         add_message("assistant", error_msg, "error")
         # Manage screenshot files even if an error occurred, as a raw file might have been saved
-        manage_on_disk_screenshots("screenshots/", MAX_SCREENSHOT_FILES)
-        log_debug_message(f"DEBUG: Called manage_on_disk_screenshots from except block in take_screenshot_and_analyze.")
+        # manage_on_disk_screenshots("screenshots/", MAX_SCREENSHOT_FILES) # REMOVED
+        # log_debug_message(f"DEBUG: Called manage_on_disk_screenshots from except block in take_screenshot_and_analyze.") # REMOVED
         return None
 
 def execute_browser_action(action_str: str) -> bool:
@@ -413,7 +347,7 @@ def main():
     
     # Log messages after st.set_page_config, as it must be the first Streamlit command.
     # log_debug_message itself ensures 'debug_log_messages' is initialized in session_state.
-    log_debug_message(f"DEBUG_STATE: In main(), AFTER st.set_page_config(), 'messages' in session_state: {'messages' in st.session_state}")
+    # log_debug_message(f"DEBUG_STATE: In main(), AFTER st.set_page_config(), 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
 
     st.title("Mistral Browser Use")
     st.subheader("Powered by Mistral AI & Computer Vision")
@@ -436,13 +370,13 @@ def main():
         # Check prerequisites
         if not st.session_state.mistral_client:
             add_message("assistant", "Please configure your Mistral AI API key in the sidebar first.", "error")
-            log_debug_message(f"DEBUG_STATE: Just before st.rerun() at API key prerequisite failed, 'messages' in session_state: {'messages' in st.session_state}")
+            # log_debug_message(f"DEBUG_STATE: Just before st.rerun() at API key prerequisite failed, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
             st.rerun()
             return # Add this if not already standard practice in the codebase for early exits
         
         if not st.session_state.browser:
             add_message("assistant", "Please start the browser first using the sidebar controls.", "error")
-            log_debug_message(f"DEBUG_STATE: Just before st.rerun() at Browser prerequisite failed, 'messages' in session_state: {'messages' in st.session_state}")
+            # log_debug_message(f"DEBUG_STATE: Just before st.rerun() at Browser prerequisite failed, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
             st.rerun()
             return
 
@@ -457,12 +391,12 @@ def main():
         st.session_state.execution_summary = []
         # current_objective will be set once planning is complete from user_input_for_planning
 
-        log_debug_message(f"DEBUG_STATE: Just before st.rerun() after setting planning_requested, 'messages' in session_state: {'messages' in st.session_state}")
+        # log_debug_message(f"DEBUG_STATE: Just before st.rerun() after setting planning_requested, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
         st.rerun()
 
     # New block to handle planning if requested
     if st.session_state.get('planning_requested'):
-        log_debug_message(f"DEBUG_STATE: Entered planning_requested block, 'messages' in session_state: {'messages' in st.session_state}")
+        # log_debug_message(f"DEBUG_STATE: Entered planning_requested block, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
         # Consume the event
         st.session_state.planning_requested = False
         current_objective_for_planning = st.session_state.user_input_for_planning
@@ -483,12 +417,12 @@ def main():
         try:
             if not st.session_state.mistral_client: # This check is also in user_input, but good for safety
                 add_message("assistant", "Mistral client not initialized. Cannot generate steps.", "error")
-                log_debug_message(f"DEBUG_STATE: Just before st.rerun() in planning_requested (Mistral client error), 'messages' in session_state: {'messages' in st.session_state}")
+                # log_debug_message(f"DEBUG_STATE: Just before st.rerun() in planning_requested (Mistral client error), 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
                 st.rerun()
                 return
 
             add_message("assistant", "🧠 Generating steps with pixtral-large-latest...", "info")
-            log_debug_message(f"DEBUG_MSG: Generating steps with pixtral-large-latest for objective: {current_objective_for_planning}")
+            # log_debug_message(f"DEBUG_MSG: Generating steps with pixtral-large-latest for objective: {current_objective_for_planning}") # REMOVED
 
             generated_steps = st.session_state.mistral_client.generate_steps_for_todo(
                 user_prompt=current_objective_for_planning,
@@ -497,16 +431,16 @@ def main():
 
             if not generated_steps:
                 add_message("assistant", "⚠️ Failed to generate steps or no steps were returned. Please try rephrasing your objective.", "error")
-                log_debug_message(f"DEBUG_STATE: Just before st.rerun() in planning_requested (no steps generated), 'messages' in session_state: {'messages' in st.session_state}")
+                # log_debug_message(f"DEBUG_STATE: Just before st.rerun() in planning_requested (no steps generated), 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
                 st.rerun()
                 return
 
             add_message("assistant", f"✅ Steps generated: {len(generated_steps)} steps.", "success")
-            log_debug_message(f"DEBUG_MSG: Steps generated: {len(generated_steps)} steps.")
+            # log_debug_message(f"DEBUG_MSG: Steps generated: {len(generated_steps)} steps.") # REMOVED
 
             todo_manager.create_todo_file(current_objective_for_planning, generated_steps)
             add_message("assistant", "💾 `todo.md` populated with generated steps.", "info")
-            log_debug_message(f"DEBUG_MSG: todo.md populated with generated steps.")
+            # log_debug_message(f"DEBUG_MSG: todo.md populated with generated steps.") # REMOVED
 
             retrieved_todo = todo_manager.read_todo_file()
             st.session_state.todo_objective = retrieved_todo.get("objective") # Should match current_objective_for_planning
@@ -530,7 +464,7 @@ def main():
             add_message("assistant", error_msg, "error")
             st.session_state.orchestrator_active = False # Ensure orchestrator is not active on error
 
-        log_debug_message(f"DEBUG_STATE: Just before st.rerun() at end of planning_requested block, orchestrator_active: {st.session_state.orchestrator_active}, 'messages' in session_state: {'messages' in st.session_state}")
+        # log_debug_message(f"DEBUG_STATE: Just before st.rerun() at end of planning_requested block, orchestrator_active: {st.session_state.orchestrator_active}, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
         st.rerun()
 
     # Orchestrator Main Execution Loop
@@ -538,7 +472,7 @@ def main():
         if not st.session_state.browser or not st.session_state.mistral_client: # This check is also in user_input, but good for safety if state changes
             add_message("assistant", "Browser or Mistral client not initialized. Orchestrator cannot proceed.", "error")
             st.session_state.orchestrator_active = False
-            log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator prerequisites failed, 'messages' in session_state: {'messages' in st.session_state}")
+            # log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator prerequisites failed, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
             st.rerun()
             return
 
@@ -556,7 +490,7 @@ def main():
             if not annotated_image_path:
                 add_message("assistant", "Failed to get screenshot for action decision. Stopping.", "error")
                 st.session_state.orchestrator_active = False
-                log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator action screenshot failed, 'messages' in session_state: {'messages' in st.session_state}")
+                # log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator action screenshot failed, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
                 st.rerun()
                 return
 
@@ -581,7 +515,7 @@ def main():
                     st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": "No action determined"})
                     if len(st.session_state.execution_summary) > MAX_EXECUTION_SUMMARY_ITEMS:
                         st.session_state.execution_summary = st.session_state.execution_summary[-MAX_EXECUTION_SUMMARY_ITEMS:]
-                    log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator no action determined, 'messages' in session_state: {'messages' in st.session_state}")
+                    # log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator no action determined, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
                     st.rerun() # Re-run, might try same task if index not incremented
                     return
 
@@ -597,7 +531,7 @@ def main():
             except Exception as e:
                 add_message("assistant", f"Error during action execution phase: {str(e)}\n{traceback.format_exc()}", "error")
                 st.session_state.orchestrator_active = False
-                log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator action execution error, 'messages' in session_state: {'messages' in st.session_state}")
+                # log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator action execution error, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
                 st.rerun()
                 return
 
@@ -609,7 +543,7 @@ def main():
             if not annotated_image_path_after_action:
                 add_message("assistant", "Failed to get screenshot for state analysis. Stopping.", "error")
                 st.session_state.orchestrator_active = False
-                log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator state analysis screenshot failed, 'messages' in session_state: {'messages' in st.session_state}")
+                # log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator state analysis screenshot failed, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
                 st.rerun()
                 return
             
@@ -661,12 +595,12 @@ def main():
                     if isinstance(msg.get('content'), str):
                         approx_messages_content_size += len(msg['content'])
 
-            log_debug_message(f"DEBUG_SIZE: Before task cycle rerun (task_idx {task_idx}): len(messages) = {len(st.session_state.get('messages', []))}, approx_messages_content_size = {approx_messages_content_size}")
+            # log_debug_message(f"DEBUG_SIZE: Before task cycle rerun (task_idx {task_idx}): len(messages) = {len(st.session_state.get('messages', []))}, approx_messages_content_size = {approx_messages_content_size}") # REMOVED
 
             # Log length of execution_summary
-            log_debug_message(f"DEBUG_SIZE: Before task cycle rerun (task_idx {task_idx}): len(execution_summary) = {len(st.session_state.get('execution_summary', []))}")
+            # log_debug_message(f"DEBUG_SIZE: Before task cycle rerun (task_idx {task_idx}): len(execution_summary) = {len(st.session_state.get('execution_summary', []))}") # REMOVED
 
-            log_debug_message(f"DEBUG_STATE: Just before st.rerun() after orchestrator task cycle (task_idx {task_idx}), 'messages' in session_state: {'messages' in st.session_state}")
+            # log_debug_message(f"DEBUG_STATE: Just before st.rerun() after orchestrator task cycle (task_idx {task_idx}), 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
             st.rerun()
 
         else: # All tasks processed (task_idx >= len(tasks))
@@ -693,7 +627,7 @@ def main():
                 add_message("assistant", "Could not take screenshot for final verification.", "error")
 
             st.session_state.orchestrator_active = False
-            log_debug_message(f"DEBUG_STATE: Just before st.rerun() after all tasks processed, 'messages' in session_state: {'messages' in st.session_state}")
+            # log_debug_message(f"DEBUG_STATE: Just before st.rerun() after all tasks processed, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
             st.rerun()
 
     # Auto-continue legacy automation if active (and orchestrator is not) - This part can be removed if legacy is fully deprecated.
