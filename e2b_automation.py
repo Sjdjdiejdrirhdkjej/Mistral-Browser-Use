@@ -36,6 +36,7 @@ class E2BDesktopAutomation:
             except Exception as e_xvfb:
                 print(f"Failed to start Xvfb: {e_xvfb}. GUI operations may fail.")
                 self.xvfb_process = None
+                raise Exception(f"Xvfb failed to start within the sandbox: {e_xvfb}. GUI-dependent operations will not be available.")
 
             self._is_session_active = True
             print("E2B session started (Xvfb attempt completed).")
@@ -183,6 +184,9 @@ class E2BDesktopAutomation:
     def take_screenshot(self, output_filepath: str = "e2b_screenshot.png") -> str | None:
         if not self.sandbox or not self._is_session_active:
             print("Error: Sandbox not active. Cannot take screenshot.")
+            return None
+        if not self.xvfb_process:
+            print("Error: Xvfb process not successfully started/initialized. Cannot take screenshot.")
             return None
         if not self.display:
             print("Error: Display not configured (Xvfb likely not running). Cannot take screenshot.")
