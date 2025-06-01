@@ -1,0 +1,4 @@
+  File "app.py", line 341
+    if action_str_lower.startswith('click('):
+    ^^
+SyntaxError: expected 'except' or 'finally' block
