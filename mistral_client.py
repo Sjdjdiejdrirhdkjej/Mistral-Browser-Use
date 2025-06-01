@@ -13,12 +13,14 @@ class MistralClient:
     
     def analyze_and_decide(self, image_base64, user_objective, model_name: str, current_context=None, system_prompt_override: str | None = None):
         """Analyze screenshot and decide on next action"""
+
+        # 1. Input Validation
         if not image_base64:
-            error_msg = "image_base64 provided to analyze_and_decide is empty or None."
-            print(error_msg) # Log to console/server logs
-            raise ValueError(error_msg) # Raise an exception to stop further processing
+            error_msg = "Validation Error: image_base64 provided to analyze_and_decide is empty or None."
+            print(error_msg)
+            return {"thinking": error_msg, "action": "ERROR_VALIDATION"}
         
-        # Construct the prompt for analysis
+        # Construct the prompt for analysis (remains the same)
         default_system_prompt = """You are an expert web automation assistant. Your task is to analyze the provided screenshot of a webpage and the current user objective, then decide the single next best action to take.
 
 AVAILABLE ACTIONS:
@@ -50,6 +52,8 @@ Overall Goal: {current_context if current_context else "Not specified, focus on 
 
 Analyze the provided screenshot and determine the single next action to take. Use the available actions and follow the response format strictly."""
 
+        response = None # Initialize response here to ensure it's in scope for the final except block
+
         try:
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
@@ -68,7 +72,7 @@ Analyze the provided screenshot and determine the single next action to take. Us
                         "content": [
                             {
                                 "type": "text",
-                                "text": user_prompt_text # Use the combined user prompt text
+                                "text": user_prompt_text
                             },
                             {
                                 "type": "image_url",
@@ -79,9 +83,9 @@ Analyze the provided screenshot and determine the single next action to take. Us
                         ]
                     }
                 ],
-                "temperature": 0.1, # Lower temperature for more deterministic JSON output
+                "temperature": 0.1,
                 "max_tokens": 1000,
-                "response_format": {"type": "json_object"} # Request JSON output
+                "response_format": {"type": "json_object"}
             }
             
             response = requests.post(
@@ -91,38 +95,72 @@ Analyze the provided screenshot and determine the single next action to take. Us
                 timeout=30
             )
             
+            # 3. Inside the Main try Block
             if response.status_code != 200:
-                raise Exception(f"API request failed: {response.status_code} - {response.text}")
+                error_msg = f"API request failed with status {response.status_code}. Response text: {response.text}"
+                print(error_msg)
+                raise Exception(error_msg) # Will be caught by the generic except Exception
             
-            result = response.json()
-            
-            if 'choices' not in result or not result['choices']:
-                raise Exception("No response from API")
-            
+            result = response.json() # This can raise json.JSONDecodeError, caught by specific handler below
+
+            if not (
+                isinstance(result, dict) and
+                'choices' in result and
+                isinstance(result['choices'], list) and
+                len(result['choices']) > 0 and
+                isinstance(result['choices'][0], dict) and
+                'message' in result['choices'][0] and
+                isinstance(result['choices'][0]['message'], dict) and
+                'content' in result['choices'][0]['message']
+            ):
+                error_msg = f"API response structure was unexpected. Full response: {result}"
+                print(error_msg)
+                raise Exception(error_msg) # Will be caught by the generic except Exception
+
             content = result['choices'][0]['message']['content']
             
-            # Try to parse as JSON
+            if not content: # Check for None or empty string
+                error_msg = "AI response content was empty or None."
+                print(error_msg)
+                return {"thinking": error_msg, "action": "ERROR_EMPTY_CONTENT"}
+
+            # 4. Inner try...except Block (for parsing content)
             try:
                 parsed_response = json.loads(content)
-                # Check for required keys AFTER successful parsing
-                if not ('thinking' in parsed_response and 'action' in parsed_response):
-                    error_message = f"AI response content is valid JSON but missing required 'thinking' or 'action' keys. Parsed content: {parsed_response}"
-                    print(error_message) # Log the error and content
-                    raise Exception(error_message) # Raise an exception
-                return parsed_response # Return if all good
-            except json.JSONDecodeError: # Handles malformed JSON
-                print(f"JSONDecodeError in analyze_and_decide: Failed to parse content. Content: {content}")
-                raise Exception(f"Failed to parse AI response as JSON. Content: {content}")
+                if not (isinstance(parsed_response, dict) and \
+                   'thinking' in parsed_response and \
+                   'action' in parsed_response):
+                    error_message = f"AI response content is valid JSON but not the expected dict structure or missing keys. Parsed content: {parsed_response}"
+                    print(error_message)
+                    return {
+                        "thinking": error_message,
+                        "action": "ERROR_INVALID_RESPONSE_STRUCTURE"
+                    }
+                return parsed_response # Success path
+            except json.JSONDecodeError as jde:
+                error_msg = f"JSONDecodeError: Failed to parse AI's 'content' string. Content: '{content}'. Error: {str(jde)}"
+                print(error_msg)
+                return {"thinking": error_msg, "action": "ERROR_CONTENT_NOT_JSON"}
 
-        except requests.exceptions.Timeout:
-            # Specific exception for timeouts
-            print(f"API request timed out in analyze_and_decide for model {model_name}.")
-            raise Exception(f"API request timed out in analyze_and_decide for model {model_name}.")
-        except Exception as e:
-            # Ensure a generic exception still tries to return the dict structure if possible,
-            # or re-raises a more informative one.
-            print(f"Error in analyze_and_decide (model: {model_name}): {str(e)}. Response text: {response.text if 'response' in locals() else 'N/A'}")
-            raise Exception(f"Failed to analyze image and decide (model: {model_name}): {str(e)}")
+        # 5. Outer except Blocks
+        except requests.exceptions.Timeout as te:
+            error_message = f"API request timed out for model {model_name}. Error: {str(te)}"
+            print(error_message)
+            return {"thinking": error_message, "action": "ERROR_TIMEOUT"}
+        except json.JSONDecodeError as jde_outer: # Catches response.json() failure
+            response_text_info = "N/A"
+            if response is not None and hasattr(response, 'text'):
+                response_text_info = response.text
+            error_message = f"Failed to parse the main API response (e.g., from response.json()). Response text: '{response_text_info}'. Error: {str(jde_outer)}"
+            print(error_message)
+            return {"thinking": error_message, "action": "ERROR_API_RESPONSE_NOT_JSON"}
+        except Exception as e: # Catch-all for the main try block
+            response_text_info = "N/A"
+            if response is not None and hasattr(response, 'text'): # Check if response object exists and has text
+                response_text_info = response.text
+            error_message = f"An unexpected error occurred in analyze_and_decide (model: {model_name}): {str(e)}. Response text: {response_text_info}"
+            print(error_message)
+            return {"thinking": error_message, "action": "ERROR_UNEXPECTED"}
     
     def test_connection(self):
         """Test the API connection"""
