@@ -13,6 +13,7 @@ import re # Added import
 
 # Max number of debug messages to keep in session state
 MAX_DEBUG_MESSAGES = 100
+MAX_EXECUTION_SUMMARY_ITEMS = 20 # Cap for execution_summary
 
 def log_debug_message(message_str: str):
     """Appends a debug message to st.session_state.debug_log_messages, capping the list size."""
@@ -495,12 +496,16 @@ def main():
                     add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")
                     # Potentially increment a retry counter for the task or stop
                     st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": "No action determined"})
+                    if len(st.session_state.execution_summary) > MAX_EXECUTION_SUMMARY_ITEMS:
+                        st.session_state.execution_summary = st.session_state.execution_summary[-MAX_EXECUTION_SUMMARY_ITEMS:]
                     log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator no action determined, 'messages' in session_state: {'messages' in st.session_state}")
                     st.rerun() # Re-run, might try same task if index not incremented
                     return
 
                 action_executed_successfully = execute_browser_action(action_str)
                 st.session_state.execution_summary.append({"task": current_task, "action": action_str, "executed": action_executed_successfully})
+                if len(st.session_state.execution_summary) > MAX_EXECUTION_SUMMARY_ITEMS:
+                    st.session_state.execution_summary = st.session_state.execution_summary[-MAX_EXECUTION_SUMMARY_ITEMS:]
 
                 if not action_executed_successfully and action_str.lower() not in ['complete', 'done']:
                      add_message("assistant", f"Action '{action_str}' failed to execute properly. Will re-evaluate.", "error")
@@ -538,6 +543,8 @@ def main():
                 analysis_summary = analysis_result.get('summary', 'No analysis summary provided.')
                 add_message("assistant", f"**Vision Model (Pixtral-12B-2409) Analysis:** {analysis_summary}", "info")
                 st.session_state.execution_summary.append({"task": current_task, "vision_analysis": analysis_result})
+                if len(st.session_state.execution_summary) > MAX_EXECUTION_SUMMARY_ITEMS:
+                    st.session_state.execution_summary = st.session_state.execution_summary[-MAX_EXECUTION_SUMMARY_ITEMS:]
 
                 # C. Decision Making
                 detected_error = analysis_result.get("error")
