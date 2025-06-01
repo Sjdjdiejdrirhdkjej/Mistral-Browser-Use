@@ -12,8 +12,6 @@ class E2BDesktopAutomation:
 
         self.sandbox: Sandbox | None = None
         self._is_session_active = False
-        self.xvfb_process = None
-        self.display = ":1"
 
     def start_session(self):
         if self._is_session_active and self.sandbox:
@@ -21,41 +19,22 @@ class E2BDesktopAutomation:
             return
         try:
             self.sandbox = Sandbox(api_key=self.api_key) # type: ignore
-
-            xvfb_command = f"Xvfb {self.display} -screen 0 1280x1024x24"
-            print(f"Starting Xvfb with command: {xvfb_command} ...")
-            try:
-                self.xvfb_process = self.sandbox.process.start( # type: ignore
-                    f"{xvfb_command}",
-                    on_stdout=lambda msg: print(f"Xvfb_stdout: {msg.line}"),
-                    on_stderr=lambda msg: print(f"Xvfb_stderr: {msg.line}"),
-                    timeout=5000
-                )
-                print(f"Xvfb process started (PID in sandbox: {self.xvfb_process.pid}). Waiting a moment for it to initialize...") # type: ignore
-                time.sleep(2)
-            except Exception as e_xvfb:
-                print(f"Failed to start Xvfb: {e_xvfb}. GUI operations may fail.")
-                self.xvfb_process = None
-                raise Exception(f"Xvfb failed to start within the sandbox: {e_xvfb}. GUI-dependent operations will not be available.")
+            # Xvfb manual startup removed
 
             self._is_session_active = True
-            print("E2B session started (Xvfb attempt completed).")
+            print("E2B session started (assuming ambient display).")
             self._ensure_tools()
 
         except Exception as e:
             self._is_session_active = False
-            if self.sandbox and self.xvfb_process:
-                try:
-                    self.xvfb_process.kill() # type: ignore
-                except Exception as e_kill:
-                    print(f"Failed to kill Xvfb during error cleanup: {e_kill}")
+            # Removed Xvfb process kill from this cleanup as it's no longer managed here
             if self.sandbox:
                  try:
                     self.sandbox.close() # type: ignore
                  except Exception as e_close:
                     print(f"Failed to close sandbox during error cleanup: {e_close}")
             self.sandbox = None
-            self.xvfb_process = None
+            # self.xvfb_process = None # Attribute removed
             print(f"Failed to start E2B session fully: {e}")
             raise
 
@@ -112,14 +91,7 @@ class E2BDesktopAutomation:
             print("Session not active or sandbox not initialized.")
             return
         try:
-            if self.xvfb_process:
-                print("Stopping Xvfb process...")
-                try:
-                    self.xvfb_process.kill() # type: ignore
-                    print("Xvfb process stop signal sent.")
-                except Exception as e_xvfb_stop:
-                    print(f"Error stopping Xvfb: {e_xvfb_stop}. It might remain running in the sandbox until sandbox closes.")
-                self.xvfb_process = None
+            # Removed Xvfb process kill as it's no longer managed here
 
             self.sandbox.close() # type: ignore
             self._is_session_active = False
@@ -131,14 +103,16 @@ class E2BDesktopAutomation:
         if not self._is_session_active or not self.sandbox:
             raise Exception("E2B session not active. Cannot run code.")
 
-        env_vars = {}
-        if use_display and self.display:
-            env_vars["DISPLAY"] = self.display
-            print(f"Running code in sandbox with DISPLAY={self.display} for script: <see below>")
-            print(code) # Print the code separately for clarity
+        env_vars = {} # Initialize empty
+        if use_display:
+            # We assume E2B's environment or the sandbox itself has DISPLAY correctly set.
+            # If specific DISPLAY is needed and known, it could be os.getenv("DISPLAY")
+            # but for now, let E2B manage it unless issues arise.
+            print(f"Running code in sandbox (use_display=True, relying on ambient DISPLAY) for script: <see below>")
         else:
-            print(f"Running code in sandbox for script: <see below>")
-            print(code)
+            print(f"Running code in sandbox (use_display=False) for script: <see below>")
+        print(code)
+        # The `env_vars` passed to `self.sandbox.run_code` will be empty unless other specific vars are needed.
 
         execution = self.sandbox.run_code(code, timeout=timeout*1000, env_vars=env_vars) # type: ignore
 
@@ -165,11 +139,11 @@ class E2BDesktopAutomation:
             raise Exception("Sandbox not active.")
 
         full_command = command
-        if use_display and self.display:
-            full_command = f"export DISPLAY={self.display} && {command}"
-            print(f"Running shell command with DISPLAY={self.display}: {full_command}")
+        if use_display:
+            # Rely on the sandbox's ambient DISPLAY variable.
+            print(f"Running shell command (use_display=True, relying on ambient DISPLAY): {full_command}")
         else:
-            print(f"Running shell command: {full_command}")
+            print(f"Running shell command (use_display=False): {full_command}")
 
         proc = self.sandbox.process.start(full_command, timeout=timeout*1000) # type: ignore
         proc.wait()
@@ -185,12 +159,8 @@ class E2BDesktopAutomation:
         if not self.sandbox or not self._is_session_active:
             print("Error: Sandbox not active. Cannot take screenshot.")
             return None
-        if not self.xvfb_process:
-            print("Error: Xvfb process not successfully started/initialized. Cannot take screenshot.")
-            return None
-        if not self.display:
-            print("Error: Display not configured (Xvfb likely not running). Cannot take screenshot.")
-            return None
+        # Removed self.xvfb_process check
+        # Removed self.display check
 
         print("Attempting to take screenshot using e2b_desktop.Sandbox.screenshot()...")
         try:
@@ -216,10 +186,9 @@ class E2BDesktopAutomation:
     def navigate_to(self, url: str): # Kept as is, uses firefox
         if not self._is_session_active:
             raise Exception("E2B session not active.")
-        if not self.display:
-            raise Exception("E2B display not available (Xvfb not running?).")
-        command = f"firefox '{url}'" # Removed setsid and backgrounding for now, rely on DISPLAY
-        print(f"Attempting to navigate to {url} using command (will use DISPLAY={self.display}): {command}")
+        # Removed self.display check for Xvfb
+        command = f"firefox '{url}'" # Rely on ambient DISPLAY
+        print(f"Attempting to navigate to {url} using command (relying on ambient DISPLAY): {command}")
         try:
             self.run_shell_command(command, timeout=20, use_display=True) # Increased timeout slightly
             print(f"Firefox navigation command for {url} executed. Check E2B desktop.")
@@ -229,8 +198,7 @@ class E2BDesktopAutomation:
     def click_at_coords(self, x: int, y: int):
         if not self._is_session_active or not self.sandbox: # type: ignore
             raise Exception("E2B session not active.")
-        if not self.display:
-            raise Exception("E2B display not available (Xvfb not running?).")
+        # Removed self.display check for Xvfb
 
         py_script = f"""
 import pyautogui
@@ -256,8 +224,7 @@ except Exception as e_click:
     def type_text(self, text_to_type: str):
         if not self._is_session_active or not self.sandbox: # type: ignore
             raise Exception("E2B session not active.")
-        if not self.display:
-            raise Exception("E2B display not available (Xvfb not running?).")
+        # Removed self.display check for Xvfb
 
         escaped_text = text_to_type.replace("'", "\\'")
 
@@ -283,8 +250,7 @@ except Exception as e_type:
     def press_key(self, key_name: str):
         if not self._is_session_active or not self.sandbox: # type: ignore
             raise Exception("E2B session not active.")
-        if not self.display:
-            raise Exception("E2B display not available (Xvfb not running?).")
+        # Removed self.display check for Xvfb
 
         key_map = {
             "RETURN": "enter", "ENTER": "enter", "ESC": "escape",
@@ -321,7 +287,8 @@ if __name__ == '__main__':
             e2b_auto = E2BDesktopAutomation()
             e2b_auto.start_session()
             if e2b_auto._is_session_active and e2b_auto.sandbox:
-                print(f"Session started with display {e2b_auto.display} and Xvfb process {e2b_auto.xvfb_process}")
+                # print(f"Session started with display {e2b_auto.display} and Xvfb process {e2b_auto.xvfb_process}") # display and xvfb_process attributes removed
+                print(f"Session started (relying on ambient display).")
 
                 print("\nAttempting to take a screenshot (native):")
                 screenshot_file = e2b_auto.take_screenshot("test_native_screenshot.png")
