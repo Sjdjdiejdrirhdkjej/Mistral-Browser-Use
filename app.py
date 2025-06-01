@@ -113,6 +113,24 @@ def manage_on_disk_screenshots(target_directory: str, maximum_files: int):
     log_debug_message(f"INFO: manage_on_disk_screenshots: Finished. Deleted {successfully_deleted_count} files. Failed to delete {failed_to_delete_count} files from '{target_directory}'.")
 
 
+def get_current_screenshot_file_count(directory: str = "screenshots/") -> int:
+    """Counts the number of files in the specified directory."""
+    if not os.path.isdir(directory):
+        log_debug_message(f"DEBUG: get_current_screenshot_file_count: Directory '{directory}' not found or invalid.")
+        return 0
+
+    count = 0
+    try:
+        for entry_name in os.listdir(directory):
+            full_file_path = os.path.join(directory, entry_name)
+            if os.path.isfile(full_file_path):
+                count += 1
+    except OSError as e:
+        log_debug_message(f"ERROR: get_current_screenshot_file_count: Could not list directory '{directory}'. Reason: {e}")
+        return 0 # Return 0 as count is unreliable or directory became inaccessible
+    return count
+
+
 def initialize_session_state():
     """Initialize session state variables"""
     if 'debug_log_messages' not in st.session_state:
@@ -216,12 +234,16 @@ def setup_sidebar():
     api_status = "🟢 Connected" if st.session_state.mistral_client else "🔴 Not configured"
     st.sidebar.write(f"Mistral AI: {api_status}")
 
-    # Display Debug Log Expander in Sidebar
+    # Display Debug Log Expander in Sidebar (existing)
     if 'debug_log_messages' in st.session_state and st.session_state.debug_log_messages:
         with st.sidebar.expander("🔧 Debug Log", expanded=False):
             st.sidebar.caption("Latest messages at the top:")
             for msg in reversed(st.session_state.debug_log_messages):
                 st.sidebar.text(msg)
+
+    st.sidebar.divider() # Separator for the new info
+    current_file_count = get_current_screenshot_file_count() # Uses default "screenshots/"
+    st.sidebar.caption(f"On-disk Screenshots: {current_file_count}")
 
 def display_chat_history():
     """Display chat message history"""
@@ -275,16 +297,18 @@ def take_screenshot_and_analyze():
         annotated_image_path = st.session_state.element_detector.detect_and_annotate_elements(screenshot_path, st.session_state.browser)
         add_message("assistant", annotated_image_path, "image", "Elements detected and indexed")
         
+        # Manage screenshot files after successful operations in try block
         manage_on_disk_screenshots("screenshots/", MAX_SCREENSHOT_FILES)
-        log_debug_message(f"DEBUG: Called manage_on_disk_screenshots after screenshot creation in try block.")
+        log_debug_message(f"DEBUG: Called manage_on_disk_screenshots from try block in take_screenshot_and_analyze.")
 
         return annotated_image_path
         
     except Exception as e:
         error_msg = f"Failed to take screenshot: {str(e)}"
         add_message("assistant", error_msg, "error")
+        # Manage screenshot files even if an error occurred, as a raw file might have been saved
         manage_on_disk_screenshots("screenshots/", MAX_SCREENSHOT_FILES)
-        log_debug_message(f"DEBUG: Called manage_on_disk_screenshots after screenshot creation attempt in except block.")
+        log_debug_message(f"DEBUG: Called manage_on_disk_screenshots from except block in take_screenshot_and_analyze.")
         return None
 
 def execute_browser_action(action_str: str) -> bool:
