@@ -15,6 +15,7 @@ import re # Added import
 MAX_DEBUG_MESSAGES = 100
 MAX_EXECUTION_SUMMARY_ITEMS = 20 # Cap for execution_summary
 MAX_CHAT_MESSAGES = 50 # Cap for chat messages
+MAX_SCREENSHOT_FILES = 70 # Cap for on-disk screenshot files
 
 def log_debug_message(message_str: str):
     """Appends a debug message to st.session_state.debug_log_messages, capping the list size."""
@@ -62,6 +63,54 @@ def delete_screenshots(screenshot_dir: str):
                 log_debug_message(f"Failed to delete {file_path}. Reason: {e}")
     except IOError as e: # This might catch issues with os.listdir itself
         log_debug_message(f"Error accessing screenshot directory {screenshot_dir} for listing: {e}")
+
+def manage_on_disk_screenshots(target_directory: str, maximum_files: int):
+    """
+    Manages the number of screenshot files in a directory, deleting the oldest if max_files is exceeded.
+    """
+    if not os.path.isdir(target_directory):
+        log_debug_message(f"DEBUG: manage_on_disk_screenshots: Directory '{target_directory}' not found or invalid.")
+        return
+
+    file_metadata_list = []
+    try:
+        for entry_name in os.listdir(target_directory):
+            full_file_path = os.path.join(target_directory, entry_name)
+            if os.path.isfile(full_file_path):
+                try:
+                    mod_time = os.path.getmtime(full_file_path)
+                    file_metadata_list.append((full_file_path, mod_time))
+                except OSError as e: # Handles issues like file vanishing during listdir and getmtime
+                    log_debug_message(f"DEBUG: manage_on_disk_screenshots: Error getting mtime for '{full_file_path}'. Reason: {e}")
+    except OSError as e:
+        log_debug_message(f"ERROR: manage_on_disk_screenshots: Could not list directory '{target_directory}'. Reason: {e}")
+        return
+
+    current_file_count = len(file_metadata_list)
+    log_debug_message(f"DEBUG: manage_on_disk_screenshots: Found {current_file_count} files in '{target_directory}'. Max allowed: {maximum_files}.")
+
+    if current_file_count <= maximum_files:
+        return
+
+    # Sort files by modification time (oldest first)
+    file_metadata_list.sort(key=lambda x: x[1])
+
+    files_to_remove_count = current_file_count - maximum_files
+    paths_to_delete = [item[0] for item in file_metadata_list[:files_to_remove_count]]
+
+    successfully_deleted_count = 0
+    failed_to_delete_count = 0
+    log_debug_message(f"DEBUG: manage_on_disk_screenshots: Attempting to delete {files_to_remove_count} oldest files from '{target_directory}'.")
+
+    for file_path_to_delete in paths_to_delete:
+        try:
+            os.remove(file_path_to_delete)
+            successfully_deleted_count += 1
+        except OSError as e:
+            failed_to_delete_count += 1
+            log_debug_message(f"ERROR: manage_on_disk_screenshots: Failed to delete '{file_path_to_delete}'. Reason: {e}")
+
+    log_debug_message(f"INFO: manage_on_disk_screenshots: Finished. Deleted {successfully_deleted_count} files. Failed to delete {failed_to_delete_count} files from '{target_directory}'.")
 
 
 def initialize_session_state():
@@ -226,11 +275,16 @@ def take_screenshot_and_analyze():
         annotated_image_path = st.session_state.element_detector.detect_and_annotate_elements(screenshot_path, st.session_state.browser)
         add_message("assistant", annotated_image_path, "image", "Elements detected and indexed")
         
+        manage_on_disk_screenshots("screenshots/", MAX_SCREENSHOT_FILES)
+        log_debug_message(f"DEBUG: Called manage_on_disk_screenshots after screenshot creation in try block.")
+
         return annotated_image_path
         
     except Exception as e:
         error_msg = f"Failed to take screenshot: {str(e)}"
         add_message("assistant", error_msg, "error")
+        manage_on_disk_screenshots("screenshots/", MAX_SCREENSHOT_FILES)
+        log_debug_message(f"DEBUG: Called manage_on_disk_screenshots after screenshot creation attempt in except block.")
         return None
 
 def execute_browser_action(action_str: str) -> bool:
