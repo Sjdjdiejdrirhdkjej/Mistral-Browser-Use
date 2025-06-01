@@ -96,6 +96,8 @@ def initialize_session_state():
         st.session_state.browser = None
     if 'e2b_automation_instance' not in st.session_state:
         st.session_state.e2b_automation_instance = None
+    if 'e2b_api_key' not in st.session_state: # Added for E2B API Key
+        st.session_state.e2b_api_key = os.getenv("E2B_API_KEY", "")
     if 'mistral_client' not in st.session_state:
         st.session_state.mistral_client = None
     if 'element_detector' not in st.session_state:
@@ -143,6 +145,25 @@ def setup_sidebar():
     
     st.sidebar.divider()
 
+    st.sidebar.subheader("E2B API Key")
+    e2b_api_key_input = st.sidebar.text_input(
+        "E2B API Key",
+        value=st.session_state.get("e2b_api_key", ""), # Get initial value from session state
+        type="password",
+        help="Enter your E2B API key. This will override the E2B_API_KEY environment variable if set."
+    )
+
+    if e2b_api_key_input:
+        st.session_state.e2b_api_key = e2b_api_key_input
+        # No direct validation here, but we can show it's set.
+        # The actual validation happens when E2BDesktopAutomation tries to use it.
+        st.sidebar.success("✅ E2B API Key provided via input field.")
+    elif st.session_state.get("e2b_api_key"): # Check if it was pre-filled (e.g. from env var via initialize_session_state)
+        st.sidebar.info("ℹ️ E2B API Key is pre-filled.")
+    # else: # Removed the warning to avoid clutter if env var is primary method
+        # st.sidebar.warning("⚠️ Please enter your E2B API key or set E2B_API_KEY environment variable.")
+    st.sidebar.divider() # Add a divider after this section
+
     st.sidebar.subheader("Execution Mode")
     st.radio(
         label="Select Mode",
@@ -163,14 +184,22 @@ def setup_sidebar():
                 st.sidebar.error(f"❌ Failed to start browser: {str(e)}")
         elif st.session_state.execution_mode == "E2B Desktop Computer Use":
             try:
-                if not os.getenv("E2B_API_KEY"):
-                    st.sidebar.error("❌ E2B_API_KEY environment variable not set.")
+                # The API key from sidebar input is in st.session_state.e2b_api_key
+                # E2BDesktopAutomation's constructor will use this, or fallback to env var, or raise error.
+                key_from_sidebar_or_env = st.session_state.get("e2b_api_key", "") # This could be from input or prefilled env
+
+                # We can add a preliminary check here for better UX before attempting instantiation
+                if not key_from_sidebar_or_env and not os.getenv("E2B_API_KEY"): # Check if neither UI nor env var has it
+                     st.sidebar.error("❌ E2B API Key is not set. Please enter it in the sidebar or set the E2B_API_KEY environment variable.")
                 else:
-                    st.session_state.e2b_automation_instance = E2BDesktopAutomation()
-                    st.session_state.e2b_automation_instance.start_session()
+                    # Pass the key from session state. If it's empty, E2BDesktopAutomation will try os.getenv.
+                    st.session_state.e2b_automation_instance = E2BDesktopAutomation(api_key=key_from_sidebar_or_env)
+                    st.session_state.e2b_automation_instance.start_session() # This might raise error if API key ultimately fails
                     st.session_state.automation_active = True
                     st.sidebar.success("✅ E2B Session started")
-            except Exception as e:
+            except ValueError as ve: # Catch specific error from E2BDesktopAutomation if key is missing
+                st.sidebar.error(f"❌ E2B Config Error: {str(ve)}")
+            except Exception as e: # Catch other errors during session start
                 st.sidebar.error(f"❌ Failed to start E2B session: {str(e)}")
     
     if st.sidebar.button("🛑 Stop Browser", disabled=not st.session_state.automation_active):
@@ -205,6 +234,10 @@ def setup_sidebar():
     
     api_status = "🟢 Connected" if st.session_state.mistral_client else "🔴 Not configured"
     st.sidebar.write(f"Mistral AI: {api_status}")
+
+    resolved_e2b_key = st.session_state.get("e2b_api_key") or os.getenv("E2B_API_KEY")
+    e2b_api_status = "🟢 Configured" if resolved_e2b_key else "🔴 Not configured"
+    st.sidebar.write(f"E2B API Key: {e2b_api_status}")
 
     st.sidebar.divider()
     current_file_count = get_current_screenshot_file_count()
