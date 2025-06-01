@@ -13,6 +13,10 @@ class MistralClient:
     
     def analyze_and_decide(self, image_base64, user_objective, model_name: str, current_context=None, system_prompt_override: str | None = None):
         """Analyze screenshot and decide on next action"""
+        if not image_base64:
+            error_msg = "image_base64 provided to analyze_and_decide is empty or None."
+            print(error_msg) # Log to console/server logs
+            raise ValueError(error_msg) # Raise an exception to stop further processing
         
         # Construct the prompt for analysis
         default_system_prompt = """You are an expert web automation assistant. Your task is to analyze the provided screenshot of a webpage and the current user objective, then decide the single next best action to take.
