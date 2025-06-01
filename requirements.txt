@@ -2,4 +2,5 @@ selenium
 opencv-python
 geckodriver
 webdriver-manager
-e2b-code-interpreter>=0.10.0
+e2b_desktop
+Pillow
