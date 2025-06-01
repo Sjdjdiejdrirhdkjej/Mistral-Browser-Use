@@ -23,7 +23,7 @@ class E2BDesktopAutomation:
             # If direct API key passing is supported by Sandbox, it would be:
             # self.sandbox = Sandbox(api_key=self.api_key)
             # For now, assume env var is picked up automatically by the Sandbox class.
-            self.sandbox = Sandbox()
+            self.sandbox = Sandbox(api_key=self.api_key) # Explicitly pass the resolved API key
 
             # The Sandbox is typically used with a context manager (with Sandbox() as sandbox:).
             # To manage it manually, we might need to call internal open/close methods if available,
