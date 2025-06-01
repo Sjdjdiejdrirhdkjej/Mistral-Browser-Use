@@ -1,5 +1,5 @@
 import os
-from e2b_code_interpreter import Sandbox, ProcessMessage, Execution
+from e2b_code_interpreter import Sandbox, Execution
 
 class E2BDesktopAutomation:
     def __init__(self, api_key: str = None):
