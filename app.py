@@ -14,6 +14,7 @@ import re # Added import
 # Max number of debug messages to keep in session state
 MAX_DEBUG_MESSAGES = 100
 MAX_EXECUTION_SUMMARY_ITEMS = 20 # Cap for execution_summary
+MAX_CHAT_MESSAGES = 50 # Cap for chat messages
 
 def log_debug_message(message_str: str):
     """Appends a debug message to st.session_state.debug_log_messages, capping the list size."""
@@ -206,6 +207,10 @@ def add_message(role, content, msg_type="text", caption=None):
     if caption:
         message["caption"] = caption
     st.session_state.messages.append(message)
+
+    # Cap the chat messages list
+    if len(st.session_state.messages) > MAX_CHAT_MESSAGES:
+        st.session_state.messages = st.session_state.messages[-MAX_CHAT_MESSAGES:]
 
 def take_screenshot_and_analyze():
     """Take screenshot and analyze with element detection"""
