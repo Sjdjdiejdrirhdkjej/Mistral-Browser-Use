@@ -383,7 +383,7 @@ def main():
     display_chat_history()
     
     # User input
-    user_input = st.chat_input("What would you like me to do on the web?")
+    user_input = st.chat_input("What would you like me to do on the web?", disabled=st.session_state.get('orchestrator_active', False))
     
     if user_input:
         add_message("user", user_input)
