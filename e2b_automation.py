@@ -52,7 +52,7 @@ class E2BDesktopAutomation:
         for tool in tools:
             # Check if tool exists (simple check, might need refinement)
             # Using `which` command to check.
-            check_process = self.sandbox.run_python(f"import shutil; print(shutil.which('{tool}'))")
+            check_process = self.sandbox.run_code(f"import shutil; print(shutil.which('{tool}'))")
             # run_python returns an Execution object, not a ProcessMessage array
             # Access stdout from the Execution object
             stdout_result = "".join(m.line for m in check_process.results if hasattr(m, 'line'))
@@ -97,7 +97,7 @@ class E2BDesktopAutomation:
         # For simplicity in this step, let's assume Python can trigger these or we'll refine.
         # The example `sandbox.run_code("x=1")` seems to be for Python.
         # Let's stick to `run_python` for Python code execution as per its name.
-        execution = self.sandbox.run_python(code, timeout=timeout*1000) # timeout in ms
+        execution = self.sandbox.run_code(code, timeout=timeout*1000) # timeout in ms
 
         if execution.error:
             print(f"Error during code execution: {execution.error.name} - {execution.error.value}")
