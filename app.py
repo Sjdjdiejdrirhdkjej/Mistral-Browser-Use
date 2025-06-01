@@ -629,14 +629,29 @@ def main():
                 )
                 thinking = response.get('thinking', 'No reasoning provided for action.')
                 action_str = response.get('action', '')
+
+                # Check for structured errors from analyze_and_decide
+                error_action_prefix = "ERROR_"
+                if action_str.startswith(error_action_prefix):
+                    add_message("assistant", f"**Action Model (Pixtral-Large-2411) Error:** {thinking}", "error") # Display thinking which now contains the error details
+                    add_message("assistant", f"The AI model encountered an issue ({action_str}). Stopping current automation. Please review the error and consider trying again or modifying the objective.", "error")
+                    st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": f"AI Error: {action_str}"})
+                    if len(st.session_state.execution_summary) > MAX_EXECUTION_SUMMARY_ITEMS:
+                        st.session_state.execution_summary = st.session_state.execution_summary[-MAX_EXECUTION_SUMMARY_ITEMS:]
+                    st.session_state.orchestrator_active = False # Stop orchestrator
+                    st.rerun()
+                    return
+
                 add_message("assistant", f"**Action Model (Pixtral-Large-2411) Reasoning:** {thinking}", "thinking")
-                if not action_str:
-                    add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")
+                if not action_str: # This case might be less likely if errors are caught above, but good for safety.
+                    add_message("assistant", "No action could be determined by the AI model. Stopping current automation.", "error")
                     st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": "No action determined"})
                     if len(st.session_state.execution_summary) > MAX_EXECUTION_SUMMARY_ITEMS:
                         st.session_state.execution_summary = st.session_state.execution_summary[-MAX_EXECUTION_SUMMARY_ITEMS:]
+                    st.session_state.orchestrator_active = False # Stop orchestrator
                     st.rerun()
                     return
+
                 action_executed_successfully = execute_browser_action(action_str)
                 st.session_state.execution_summary.append({"task": current_task, "action": action_str, "executed": action_executed_successfully})
                 if len(st.session_state.execution_summary) > MAX_EXECUTION_SUMMARY_ITEMS:
@@ -644,7 +659,7 @@ def main():
                 if not action_executed_successfully and action_str.lower() not in ['complete', 'done']:
                      add_message("assistant", f"Action '{action_str}' failed to execute properly. Will re-evaluate.", "error")
             except Exception as e:
-                add_message("assistant", f"Error during action execution phase: {str(e)}\n{traceback.format_exc()}", "error")
+                add_message("assistant", f"Error during action decision or execution phase: {str(e)}\n{traceback.format_exc()}", "error")
                 st.session_state.orchestrator_active = False
                 st.rerun()
                 return
