@@ -391,7 +391,7 @@ def main():
     # log_debug_message itself ensures 'debug_log_messages' is initialized in session_state.
     log_debug_message(f"DEBUG_STATE: In main(), AFTER st.set_page_config(), 'messages' in session_state: {'messages' in st.session_state}")
 
-    st.title("🤖 Web Automation Assistant")
+    st.title("Mistral Browser Use")
     st.subheader("Powered by Mistral AI & Computer Vision")
     
     initialize_session_state() # Initializes 'messages' and other states.
