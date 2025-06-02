@@ -143,6 +143,72 @@ def execute_e2b_type(text_to_type):
         # print(f"E2B Type Error: {traceback.format_exc()}")
         return False
 
+def get_screenshot_info():
+    """Calculates total count and size of screenshots in predefined directories."""
+    screenshots_dir = "screenshots"  # For Selenium screenshots
+    e2b_screenshots_dir = "e2b_screenshots" # For E2B screenshots
+    all_dirs = [screenshots_dir, e2b_screenshots_dir]
+    
+    total_files = 0
+    total_size_bytes = 0
+    
+    for directory in all_dirs:
+        if os.path.exists(directory):
+            try:
+                for filename in os.listdir(directory):
+                    # Consider only common image file extensions
+                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')): 
+                        filepath = os.path.join(directory, filename)
+                        if os.path.isfile(filepath): # Make sure it's a file
+                            try:
+                                total_files += 1
+                                total_size_bytes += os.path.getsize(filepath)
+                            except OSError: # Handle potential errors like file deleted during iteration
+                                pass 
+            except OSError: # Handle potential errors like directory not accessible
+                pass
+                        
+    total_size_mb = total_size_bytes / (1024 * 1024)
+    return {"count": total_files, "total_size_mb": round(total_size_mb, 2)} # Rounded for display
+
+def delete_all_screenshots():
+    """Deletes all files in predefined screenshot directories and returns a status message."""
+    screenshots_dir = "screenshots"
+    e2b_screenshots_dir = "e2b_screenshots"
+    all_dirs = [screenshots_dir, e2b_screenshots_dir]
+    
+    deleted_files_count = 0
+    total_freed_space_bytes = 0
+    errors_occurred = False
+    
+    for directory in all_dirs:
+        if os.path.exists(directory):
+            try:
+                for filename in os.listdir(directory):
+                    filepath = os.path.join(directory, filename)
+                    try:
+                        if os.path.isfile(filepath): # Make sure it's a file
+                            file_size = os.path.getsize(filepath)
+                            os.remove(filepath)
+                            deleted_files_count += 1
+                            total_freed_space_bytes += file_size
+                    except Exception as e:
+                        # Using print for server-side log, Streamlit message will be generic
+                        print(f"Error deleting file {filepath}: {e}") 
+                        errors_occurred = True
+            except OSError as e:
+                print(f"Error listing directory {directory}: {e}")
+                errors_occurred = True
+                        
+    total_freed_space_mb = total_freed_space_bytes / (1024 * 1024)
+    
+    if errors_occurred:
+        return f"Attempted to delete screenshots. Some errors occurred. Freed approx. {total_freed_space_mb:.2f} MB from {deleted_files_count} files."
+    elif deleted_files_count == 0:
+        return "No screenshot files found to delete."
+    else:
+        return f"Successfully deleted {deleted_files_count} screenshot files, freeing {total_freed_space_mb:.2f} MB."
+
 def initialize_session_state():
     """Initialize session state variables"""
     if 'messages' not in st.session_state:
@@ -262,6 +328,22 @@ def setup_sidebar():
             st.session_state.e2b_should_be_running = False
             st.sidebar.info("E2B Desktop stop initiated...") # User feedback
             st.rerun()
+
+    st.sidebar.divider()
+    st.sidebar.subheader("🖼️ Screenshot Management")
+    info = get_screenshot_info() 
+    st.sidebar.write(f"On-disk screenshots: {info['count']}")
+    st.sidebar.write(f"Total size: {info['total_size_mb']:.2f} MB")
+
+    if st.sidebar.button("🗑️ Clear All Screenshots"):
+        status_message = delete_all_screenshots()
+        if "error" in status_message.lower() or "failed" in status_message.lower():
+            st.sidebar.error(status_message)
+        elif "no screenshot files found" in status_message.lower():
+            st.sidebar.warning(status_message)
+        else:
+            st.sidebar.success(status_message)
+        st.rerun()
             
     # Status indicators
     st.sidebar.divider()
