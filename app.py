@@ -9,7 +9,9 @@ from datetime import datetime
 from browser_automation import BrowserAutomation
 # from mistral_client import MistralClient # Removed
 # from ollama_client import OllamaClient # Removed
-from llamaindex_client import LlamaIndexClient # Added
+# from llamaindex_client import LlamaIndexClient # Removed
+from local_model_client import LocalModelClient # Added
+from ollama_utils import is_ollama_installed, is_ollama_server_running, start_ollama_server_for_pull, stop_ollama_server_after_pull, ensure_model_pulled # Added
 from element_detector import ElementDetector
 import todo_manager # Added import
 import traceback
@@ -116,10 +118,21 @@ def initialize_session_state():
     #     st.session_state.mistral_client = None # Removed
     # if 'ollama_client' not in st.session_state: # Removed (old client)
     #     st.session_state.ollama_client = None # Removed
-    if 'llamaindex_client' not in st.session_state: # Added for LlamaIndexClient
-        st.session_state.llamaindex_client = None
-    # if 'ai_provider' not in st.session_state: # Removed AI provider selection
-    #     st.session_state.ai_provider = "Mistral" # Default to Mistral # Removed
+    # if 'llamaindex_client' not in st.session_state: # Removed
+    #     st.session_state.llamaindex_client = None # Removed
+    if 'local_model_client' not in st.session_state: # Added for LocalModelClient
+        st.session_state.local_model_client = None
+    if 'qwen_gguf_path' not in st.session_state:
+        st.session_state.qwen_gguf_path = ""
+    if 'qwen_clip_path' not in st.session_state:
+        st.session_state.qwen_clip_path = ""
+    if 'model_load_error' not in st.session_state:
+        st.session_state.model_load_error = True # Assume error until loaded
+    if 'ollama_setup_error' not in st.session_state: # For Ollama installation check
+        st.session_state.ollama_setup_error = True # Assume error until check passes
+    # ollama_server_running state is mostly for the pull process now, not for client use
+    if 'ollama_server_for_pull_running' not in st.session_state:
+        st.session_state.ollama_server_for_pull_running = False
     if 'element_detector' not in st.session_state:
         st.session_state.element_detector = ElementDetector()
     if 'automation_active' not in st.session_state:
@@ -144,94 +157,88 @@ def initialize_session_state():
     if 'user_input_for_planning' not in st.session_state:
         st.session_state.user_input_for_planning = None
     
-def is_ollama_installed() -> bool:
-    """Checks if the 'ollama' command-line tool is installed and in the PATH."""
-    return shutil.which('ollama') is not None
+# Helper functions like is_ollama_installed, is_ollama_server_running, start_ollama_server
+# are now expected to be imported from ollama_utils.py or defined above if not already.
+# For this diff, assuming they are available (e.g. from previous step or will be added by ollama_utils import)
 
 def setup_sidebar():
-    """Setup sidebar for API key configuration and controls"""
+    """Setup sidebar for model configuration and controls"""
     st.sidebar.title("🔧 Configuration")
 
-    # Ollama Installation Check
-    if not is_ollama_installed():
-        st.sidebar.error("Ollama is not installed. This application requires Ollama to function.")
-        st.sidebar.markdown("Please install it from [https://ollama.com](https://ollama.com) and ensure 'ollama' is in your system PATH.")
+    # Ollama Installation Check (using ollama_utils)
+    if not is_ollama_installed(): # This function is from ollama_utils
+        st.sidebar.error("Ollama CLI not detected. This application uses Ollama to download models and requires it to be installed and in the system PATH.")
+        st.sidebar.markdown("Please install Ollama from [https://ollama.com](https://ollama.com).")
         st.session_state.ollama_setup_error = True
-        # Disable further UI or return if critical parts of the app depend on this.
-        # For now, we'll let other elements render but they should check ollama_setup_error.
+        st.session_state.local_model_client = None # Ensure no client if Ollama CLI is missing
+        return # Stop further sidebar setup
     else:
-        st.sidebar.info("✅ Ollama installation found.")
+        st.sidebar.info("✅ Ollama CLI installation found.")
         st.session_state.ollama_setup_error = False
 
-    # Ollama Server Management (Check and Attempt Start)
-    # This section only runs if Ollama CLI is installed
-    if not st.session_state.get('ollama_setup_error', True):
-        st.sidebar.subheader("Ollama Server Management")
-        if 'ollama_server_running' not in st.session_state:
-             st.session_state.ollama_server_running = False # Initialize
-
-        if is_ollama_server_running():
-            st.session_state.ollama_server_running = True
-            st.sidebar.info("✅ Ollama server is running.")
+    # Model Download via Ollama
+    st.sidebar.subheader("Model Download (via Ollama)")
+    st.sidebar.info("This application uses local GGUF models. You can use Ollama to download the 'qwen2.5vl' model. After downloading, you'll need to provide the full path to the GGUF file(s).")
+    if st.sidebar.button("📦 Download/Verify qwen2.5vl with Ollama"):
+        # ensure_model_pulled will use st.spinner and messages internally
+        with st.spinner("Checking/pulling 'qwen2.5vl' model via Ollama..."):
+            pull_successful = ensure_model_pulled("qwen2.5vl") # This function is from ollama_utils
+        if pull_successful:
+            st.sidebar.success("Model 'qwen2.5vl' is available via Ollama or was pulled successfully.")
+            st.sidebar.markdown("""
+            **Next Steps:**
+            1. Find the downloaded GGUF file. Run `ollama show qwen2.5vl --modelfile` in your terminal. Look for the `FROM` line, which points to a manifest.
+            2. Open the manifest file. It will contain the path to the actual GGUF blob (e.g., `/Users/.../.ollama/models/blobs/sha256-...`).
+            3. Also, `qwen2.5vl` might require a separate CLIP model GGUF if it's a Llava-like architecture. You may need to locate this as well (its path might be relative or need to be found similarly).
+            4. Enter the full path(s) in the fields below.
+            """)
         else:
-            st.sidebar.warning("Ollama server is not running.")
-            if st.sidebar.button("🚀 Attempt to Start Ollama Server"):
-                with st.spinner("Attempting to start Ollama server..."):
-                    if start_ollama_server():
-                        st.sidebar.info("Ollama server starting... waiting a few seconds to confirm.")
-                        time.sleep(5) # Wait for server to initialize
-                        if is_ollama_server_running():
-                            st.session_state.ollama_server_running = True
-                            st.sidebar.success("✅ Ollama server started and is running.")
-                            st.rerun() # Rerun to update UI based on server running
-                        else:
-                            st.session_state.ollama_server_running = False
-                            st.sidebar.error("❌ Failed to confirm Ollama server is running after start attempt. Please start it manually (e.g., `ollama serve`).")
-                    else:
-                        st.session_state.ollama_server_running = False
-                        # Error message already shown by start_ollama_server()
-                        st.sidebar.error("❌ Failed to initiate Ollama server startup. Please start it manually.")
-            else:
-                 st.session_state.ollama_server_running = False # Explicitly set if not running and no start attempt
-                 st.sidebar.caption("If Ollama server is not running, click the button above or start it manually (e.g., `ollama serve`).")
+            st.sidebar.error("Model download/verification failed. Check console output from Ollama if server was started, or ensure Ollama server can run.")
+
+    # GGUF Path Inputs for LocalModelClient
+    st.sidebar.subheader("Local Model Configuration (LlamaCPP)")
+    qwen_gguf_path = st.sidebar.text_input(
+        "Full path to qwen2.5vl GGUF model file",
+        value=st.session_state.get("qwen_gguf_path", ""),
+        key="qwen_gguf_path_input", # Use a different key for input to avoid direct manipulation of session_state key
+        help="Example: /Users/yourname/.ollama/models/blobs/sha256-abc123def456.gguf"
+    )
+    qwen_clip_path = st.sidebar.text_input(
+        "Full path to qwen2.5vl CLIP GGUF (if needed)",
+        value=st.session_state.get("qwen_clip_path", ""),
+        key="qwen_clip_path_input",
+        help="Optional. For Llava-like models, provide path to the CLIP/projector GGUF."
+    )
+
+    # Update session state from text inputs
+    st.session_state.qwen_gguf_path = qwen_gguf_path
+    st.session_state.qwen_clip_path = qwen_clip_path if qwen_clip_path else None
 
 
-    # LlamaIndexClient Initialization and Ollama Model Setup
-    # This section will only proceed if Ollama CLI is installed AND server is (now) running
-    if not st.session_state.get('ollama_setup_error', True) and st.session_state.get('ollama_server_running', False):
-        st.sidebar.subheader("LlamaIndex Client & Models")
+    # Initialize LocalModelClient if paths are provided
+    if st.session_state.qwen_gguf_path:
+        # Attempt to initialize only if paths changed or client not initialized
+        if 'local_model_client' not in st.session_state or \
+           st.session_state.local_model_client is None or \
+           st.session_state.local_model_client.model_path != st.session_state.qwen_gguf_path or \
+           st.session_state.local_model_client.clip_model_path != st.session_state.qwen_clip_path:
 
-        if 'llamaindex_client' not in st.session_state or st.session_state.llamaindex_client is None:
             try:
-                st.session_state.llamaindex_client = LlamaIndexClient()
-                st.sidebar.success(f"✅ LlamaIndexClient initialized for model '{st.session_state.llamaindex_client.model_name}'.")
+                st.sidebar.info("Initializing LocalModelClient with provided GGUF path(s)...")
+                st.session_state.local_model_client = LocalModelClient(
+                    model_path=st.session_state.qwen_gguf_path,
+                    clip_model_path=st.session_state.qwen_clip_path
+                )
+                st.sidebar.success("✅ LocalModelClient initialized.")
+                st.session_state.model_load_error = False
             except Exception as e:
-                st.sidebar.error(f"❌ Failed to initialize LlamaIndexClient: {e}")
-                st.session_state.llamaindex_client = None
-
-        if st.session_state.llamaindex_client:
-            target_model = st.session_state.llamaindex_client.model_name
-            try:
-                if st.session_state.llamaindex_client.is_model_available(target_model):
-                    st.sidebar.success(f"✅ Model '{target_model}' is available.")
-                else:
-                    st.sidebar.warning(f"⚠️ Model '{target_model}' not found locally.")
-                    if st.sidebar.button(f"📥 Download '{target_model}' Model"):
-                        with st.spinner(f"Pulling '{target_model}'... This may take a while. See console for progress."):
-                            success, message = st.session_state.llamaindex_client.pull_model(target_model)
-                        if success:
-                            st.sidebar.success(message)
-                            st.rerun()
-                        else:
-                            st.sidebar.error(message)
-            except Exception as e:
-                st.sidebar.error(f"❌ Error checking/pulling Ollama model '{target_model}': {e}. Ensure Ollama server is responsive.")
-
-    # Handling cases where setup is incomplete for the LlamaIndex/Ollama Status section
-    elif not st.session_state.get('ollama_setup_error', True) and not st.session_state.get('ollama_server_running', False):
-        st.sidebar.warning("Ollama server is not running. Client & model checks skipped.")
-    elif 'ollama_setup_error' not in st.session_state :
-        pass # Initial state before checks run
+                st.sidebar.error(f"❌ Failed to initialize LocalModelClient: {e}")
+                st.session_state.local_model_client = None
+                st.session_state.model_load_error = True
+    else:
+        st.sidebar.warning("Please provide the path to the main qwen2.5vl GGUF model file to enable AI features.")
+        st.session_state.local_model_client = None # Ensure client is None if path is missing
+        st.session_state.model_load_error = True # Mark as error state if no path
 
     st.sidebar.divider()
     # Browser Controls
@@ -262,24 +269,23 @@ def setup_sidebar():
     browser_status = "🟢 Running" if st.session_state.browser and st.session_state.automation_active else "🔴 Stopped"
     st.sidebar.write(f"🌐 Browser: {browser_status}")
 
-    st.sidebar.subheader("LlamaIndex/Ollama Status")
-    if st.session_state.get('ollama_setup_error', True):
-        st.sidebar.write("🤖 Ollama CLI: 🔴 Not found or error during setup.")
-    elif not st.session_state.get('ollama_server_running', False): # Server explicitly not running
-        st.sidebar.write(f"🤖 Ollama Server: 🔴 Not Running. Please attempt to start it via 'Ollama Server Management' section if Ollama is installed.")
-    elif st.session_state.get('llamaindex_client'): # Server is running, check client and models
-        client = st.session_state.llamaindex_client
-        st.sidebar.write(f"🤖 Ollama Service: ✅ Running at {client.ollama_base_url}")
-        # This check is slightly redundant if server check passed, but confirms model availability via client
-        model_available = False
-        try:
-            model_available = client.is_model_available(client.model_name)
-        except Exception: # Catch if is_model_available itself fails (e.g. client init but server dies)
-            pass
-        model_status = f"✅ Model ({client.model_name}): Available" if model_available else f"⚠️ Model ({client.model_name}): Not Found (Download in 'LlamaIndex Client & Models' section)"
-        st.sidebar.write(model_status)
-    else: # Ollama installed, server running, but client failed to initialize
-        st.sidebar.write("🤖 LlamaIndex/Ollama: 🔴 Client Not Initialized (Ollama server might be running but client init failed. Check logs).")
+    st.sidebar.subheader("Local Model Client Status")
+    if st.session_state.get('ollama_setup_error'):
+        st.sidebar.write("🔴 Ollama CLI not found. Please install Ollama to use model download features.")
+
+    if not st.session_state.get("qwen_gguf_path"):
+        st.sidebar.write("🟡 GGUF model path not provided.")
+    elif st.session_state.get('model_load_error', True):
+        st.sidebar.write("🔴 LocalModelClient: Error during initialization (check paths and GGUF files).")
+    elif st.session_state.get('local_model_client'):
+        client = st.session_state.local_model_client
+        st.sidebar.write(f"✅ LocalModelClient: Initialized for '{client.model_name}'.")
+        if client.is_multimodal:
+            st.sidebar.write(f"    Mode: Multi-modal (CLIP model path provided).")
+        else:
+            st.sidebar.write(f"    Mode: Text-only (CLIP model path not provided).")
+    else:
+        st.sidebar.write("🟡 LocalModelClient: Not yet initialized (provide GGUF path).")
 
     # Debug Log Expander and Screenshot Count Display REMOVED from sidebar
 
@@ -488,22 +494,17 @@ def main():
     if user_input:
         add_message("user", user_input)
 
-        # Check prerequisites: Ollama installed, LlamaIndexClient initialized, Browser started, Models available
-        if st.session_state.get('ollama_setup_error', True):
-            add_message("assistant", "Ollama is not installed or set up correctly. Please check the sidebar.", "error")
+        # Check prerequisites: LocalModelClient initialized and GGUF path provided
+        if st.session_state.get('model_load_error', True) or not st.session_state.get('local_model_client'):
+            add_message("assistant", "LocalModelClient is not ready. Please provide valid GGUF path(s) in the sidebar and ensure the model is correctly loaded.", "error")
             st.rerun()
             return
 
-        if not st.session_state.get('llamaindex_client') or not st.session_state.get('ollama_server_running'):
-            add_message("assistant", "LlamaIndexClient is not ready or Ollama server is not running. Please check setup in the sidebar.", "error")
-            st.rerun()
-            return
+        # Ollama CLI installation is only needed for the download button, not for inference with LlamaCPP.
+        # Server running check is also not needed for LlamaCPP inference.
 
-        client = st.session_state.llamaindex_client
-        if not client.is_model_available(client.model_name): # Check for the primary model
-            add_message("assistant", f"Required model '{client.model_name}' is not available in Ollama. Please download it using the sidebar.", "error")
-            st.rerun()
-            return
+        client = st.session_state.local_model_client
+        # No model availability check here as LlamaCPP loads it directly or fails at init.
 
         if not st.session_state.browser:
             add_message("assistant", "Please start the browser first using the sidebar controls.", "error")
@@ -546,18 +547,18 @@ def main():
         add_message("assistant", f"📝 `todo.md` reset for objective: {current_objective_for_planning}", "info")
 
         try:
-            # Now using LlamaIndexClient directly
-            llamaindex_client = st.session_state.llamaindex_client
-            client_name = f"LlamaIndex (Ollama - {llamaindex_client.text_model_name})" # For display
+            # Now using LocalModelClient directly
+            local_model_client = st.session_state.local_model_client
+            client_display_name = f"LocalModel ({local_model_client.model_name})"
 
-            add_message("assistant", f"🧠 Generating steps with {client_name}...", "info")
+            add_message("assistant", f"🧠 Generating steps with {client_display_name}...", "info")
 
             try:
-                generated_steps = llamaindex_client.generate_steps_for_todo(
+                generated_steps = local_model_client.generate_steps_for_todo(
                     objective=current_objective_for_planning
                 )
             except Exception as e:
-                add_message("assistant", f"Error generating steps with {client_name}: {e}", "error")
+                add_message("assistant", f"Error generating steps with {client_display_name}: {e}", "error")
                 st.session_state.orchestrator_active = False
                 st.rerun()
                 return
@@ -581,7 +582,7 @@ def main():
             st.session_state.todo_tasks = retrieved_todo.get("tasks", [])
             st.session_state.current_task_index = 0
 
-            plan_display_intro = f"**Planning Agent ({client_name}) says:** Planning complete. Here's the initial plan:"
+            plan_display_intro = f"**Planning Agent ({client_display_name}) says:** Planning complete. Here's the initial plan:"
             plan_display = f"{plan_display_intro}\n\n**Objective:** {st.session_state.todo_objective}\n\n"
             plan_display += "**Tasks:**\n"
             if st.session_state.todo_tasks:
@@ -603,19 +604,18 @@ def main():
 
     # Orchestrator Main Execution Loop
     if st.session_state.get('orchestrator_active') and st.session_state.todo_tasks:
-        # All AI calls will now use LlamaIndexClient
-        llamaindex_client = st.session_state.get('llamaindex_client')
+        local_model_client = st.session_state.get('local_model_client')
 
-        if not st.session_state.browser or not llamaindex_client:
-            add_message("assistant", "Browser or LlamaIndexClient not initialized. Orchestrator cannot proceed.", "error")
+        if not st.session_state.browser or not local_model_client:
+            add_message("assistant", "Browser or LocalModelClient not initialized. Orchestrator cannot proceed.", "error")
             st.session_state.orchestrator_active = False
             st.rerun()
             return
 
-        # Model names are now sourced from the client instance for display/logging
-        client_display_name = f"LlamaIndex (Ollama - Vision: {llamaindex_client.vision_model_name}, Text: {llamaindex_client.text_model_name})"
-        action_decision_model_display = llamaindex_client.vision_model_name # qwen2.5vl for multimodal decisions
-        vision_model_display = llamaindex_client.vision_model_name # qwen2.5vl for vision analysis
+        client_display_name = f"LocalModel ({local_model_client.model_name})"
+        # Model name is now inherent to the client for LlamaCPP
+        action_decision_model_display = local_model_client.model_name
+        vision_model_display = local_model_client.model_name
 
         task_idx = st.session_state.current_task_index
         tasks = st.session_state.todo_tasks
@@ -639,13 +639,13 @@ def main():
                 with open(annotated_image_path, 'rb') as img_file:
                     image_data = base64.b64encode(img_file.read()).decode('utf-8')
 
-                add_message("assistant", f"🤔 Using {client_display_name} (model: {action_decision_model_display}) for action decision...", "thinking")
+                add_message("assistant", f"🤔 Using {client_display_name} for action decision...", "thinking")
 
                 try:
-                    response = llamaindex_client.analyze_and_decide(
-                        image_base64=image_data, # Pass base64 string
+                    response = local_model_client.analyze_and_decide(
+                        image_base64=image_data,
                         user_objective=st.session_state.todo_objective,
-                        current_task_description=current_task
+                        current_task=current_task # Pass current_task as per LocalModelClient signature
                     )
                 except Exception as e:
                     add_message("assistant", f"Error during action decision with {client_display_name}: {e}", "error")
@@ -700,11 +700,11 @@ def main():
                 with open(annotated_image_path_after_action, 'rb') as img_file:
                     image_data_after_action = base64.b64encode(img_file.read()).decode('utf-8')
 
-                add_message("assistant", f"🧐 Using {client_display_name} (model: {vision_model_display}) for state analysis...", "info")
+                add_message("assistant", f"🧐 Using {client_display_name} for state analysis...", "info")
 
                 try:
-                    analysis_result = llamaindex_client.analyze_state_vision(
-                        image_base64=image_data_after_action, # Pass base64 string
+                    analysis_result = local_model_client.analyze_state_vision(
+                        image_base64=image_data_after_action,
                         current_task=current_task,
                         objective=st.session_state.todo_objective
                     )
@@ -771,11 +771,11 @@ def main():
                     with open(final_annotated_image_path, 'rb') as img_file:
                         final_image_data = base64.b64encode(img_file.read()).decode('utf-8')
 
-                    add_message("assistant", f"🧐 Using {client_display_name} (model: {vision_model_display}) for final verification...", "info")
+                    add_message("assistant", f"🧐 Using {client_display_name} for final verification...", "info")
 
                     try:
-                        final_analysis = llamaindex_client.analyze_state_vision(
-                            image_base64=final_image_data, # Pass base64 string
+                        final_analysis = local_model_client.analyze_state_vision(
+                            image_base64=final_image_data,
                             current_task="Final objective verification",
                             objective=st.session_state.todo_objective
                         )
