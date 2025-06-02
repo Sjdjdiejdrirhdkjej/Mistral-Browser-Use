@@ -372,9 +372,23 @@ def main():
         try:
             if hasattr(st.session_state.e2b_session, 'stream') and st.session_state.e2b_session.stream:
                 st.session_state.e2b_session.stream.stop() # Stop streaming
-            # Similar async considerations as above for close()
-            st.session_state.e2b_session.close()
-            add_message("assistant", "E2B Desktop session stopped.", "success")
+
+            print(f"Attempting to close E2B session. Object type: {type(st.session_state.e2b_session)}")
+            # Attempting to use .destroy() instead of .close() due to AttributeError
+            if hasattr(st.session_state.e2b_session, 'destroy'):
+                st.session_state.e2b_session.destroy()
+            else:
+                # Fallback or log if destroy also doesn't exist, though problem description implies close was the issue
+                # For now, if destroy isn't there, we'll let it raise an error to see what's happening
+                # or one might add a specific log like:
+                # add_message("assistant", "E2B session object does not have .destroy() method either.", "error")
+                # For this specific task, the focus is trying destroy() as an alternative to close().
+                # If 'close' was the original attempt and failed with AttributeError, and if 'destroy' also fails,
+                # it indicates a deeper issue with the e2b_session object's state or type.
+                # Given the error was "'Sandbox' object has no attribute 'close'", we assume .destroy() is the target.
+                st.session_state.e2b_session.close() # Re-attempt close if destroy is not found, to ensure an error is raised if neither works.
+
+            add_message("assistant", "E2B Desktop session stopped/destroyed.", "success")
         except Exception as e:
             add_message("assistant", f"Error stopping E2B Desktop: {str(e)}", "error")
         finally:
@@ -402,17 +416,25 @@ def main():
     
     if user_input:
         add_message("user", user_input)
-        
-        # Check prerequisites
+
+        # If E2B Desktop is active and running, inform user and skip browser automation flow for this input
+        if st.session_state.get('e2b_desktop_enabled') and st.session_state.get('e2b_session'):
+            add_message("assistant", "E2B Desktop is active. Please use the E2B window for your tasks. Chat input here is for general interaction or future E2B control features.", "info")
+            st.rerun() # Rerun to display the message
+            return # Exit this processing path
+
+        # Check prerequisites (only if not in active E2B mode, due to the return above)
         if not st.session_state.mistral_client:
             add_message("assistant", "Please configure your Mistral AI API key in the sidebar first.", "error")
             st.rerun()
-            return # Add this if not already standard practice in the codebase for early exits
+            return
         
-        if not st.session_state.browser:
-            add_message("assistant", "Please start the browser first using the sidebar controls.", "error")
+        # This check is now implicitly conditional: only runs if E2B is not active.
+        # No 'else' needed because the E2B active case returns early.
+        if not st.session_state.get('automation_active'): # Check if browser automation is active
+            add_message("assistant", "Browser session is not running. Please start it using 'Start Browser' in Session Controls if you want to automate web tasks.", "info")
             st.rerun()
-            return # Add this for consistency
+            return
 
         st.session_state.current_objective = user_input
         # New Orchestrator Logic
