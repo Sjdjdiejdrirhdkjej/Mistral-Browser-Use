@@ -104,7 +104,7 @@ Analyze the provided screenshot and determine the single next action to take. Us
                     return parsed_response
             except json.JSONDecodeError:
                 pass
-
+            
             # If JSON parsing fails (it shouldn't with response_format set, but as a fallback)
             # or if the response is not a JSON string, this will be caught by the outer try-except.
             # The goal is to always return the expected dictionary structure if possible.

@@ -90,9 +90,9 @@ def setup_sidebar():
         st.sidebar.info("ℹ️ E2B API Key configured from environment variable.")
     else: # This is the case where neither is set.
         st.sidebar.warning("⚠️ E2B API Key not set. Please enter it or set E2B_API_KEY env var.")
-
+    
     st.session_state.e2b_desktop_enabled = st.sidebar.toggle(
-        "Enable E2B Desktop Mode",
+        "Enable E2B Desktop Mode", 
         value=st.session_state.e2b_desktop_enabled,
         help="Toggle between Browser mode and E2B Desktop mode."
     )
@@ -112,7 +112,7 @@ def setup_sidebar():
                 st.rerun()
             except Exception as e:
                 st.sidebar.error(f"❌ Failed to start browser: {str(e)}")
-
+        
         if st.sidebar.button("🛑 Stop Browser", disabled=not st.session_state.get('automation_active', False)):
             try:
                 if st.session_state.browser:
@@ -133,7 +133,7 @@ def setup_sidebar():
             st.session_state.e2b_should_be_running = False
             st.sidebar.info("E2B Desktop stop initiated...") # User feedback
             st.rerun()
-
+            
     # Status indicators
     st.sidebar.divider()
     st.sidebar.subheader("Status")
@@ -151,13 +151,13 @@ def setup_sidebar():
             e2b_status_text = "🟢 Running"
         elif st.session_state.get('e2b_should_be_running') and not st.session_state.get('e2b_session'):
             # This means it's set to run, but session not established yet by main()
-            e2b_status_text = "⏳ Starting..."
-        else:
+            e2b_status_text = "⏳ Starting..." 
+        else: 
             e2b_status_text = "🔴 Stopped"
         st.sidebar.write(f"E2B Session: {e2b_status_text}")
 
     # Keep Mistral AI Status
-    if 'mistral_client' in st.session_state:
+    if 'mistral_client' in st.session_state: 
       api_status = "🟢 Connected" if st.session_state.mistral_client else "🔴 Not configured"
       st.sidebar.write(f"Mistral AI: {api_status}")
 
@@ -200,17 +200,17 @@ def take_screenshot_and_analyze():
     try:
         if not st.session_state.browser:
             raise Exception("Browser not started")
-
+        
         # Take screenshot
         screenshot_path = st.session_state.browser.take_screenshot()
         add_message("assistant", screenshot_path, "image", "Current page screenshot")
-
+        
         # Detect and highlight elements
         annotated_image_path = st.session_state.element_detector.detect_and_annotate_elements(screenshot_path, st.session_state.browser)
         add_message("assistant", annotated_image_path, "image", "Elements detected and indexed")
-
+        
         return annotated_image_path
-
+        
     except Exception as e:
         error_msg = f"Failed to take screenshot: {str(e)}"
         add_message("assistant", error_msg, "error")
@@ -236,7 +236,7 @@ def execute_browser_action(action_str: str) -> bool:
                 return True
             else:
                 raise ValueError(f"Invalid click action format: {action_str}")
-
+        
         elif action_str_lower.startswith('type('):
             match = re.search(r"type\(['\"](.*?)['\"]\s*,\s*into\s*=\s*['\"](.*?)['\"]\)", action_str, re.IGNORECASE)
             if match:
@@ -289,17 +289,17 @@ def execute_browser_action(action_str: str) -> bool:
             else:
                 add_message("assistant", f"Invalid navigate_to action format: {action_str}", "error")
                 return False
-
+        
         elif 'complete' in action_str_lower or 'done' in action_str_lower:
             # This action type signals overall completion, handled by orchestrator's decision logic.
             # For execute_browser_action, it means no direct browser op, but action is "valid".
             add_message("assistant", "Completion signal received.", "action")
             return True
-
+        
         else:
             add_message("assistant", f"Unknown or malformed action: {action_str}", "error")
             return False
-
+        
     except Exception as e:
         # This will catch errors from browser interaction (e.g., element not found) or format issues
         error_msg = f"Error executing action '{action_str}': {str(e)}"
@@ -315,7 +315,7 @@ def main():
         page_icon="🤖",
         layout="wide"
     )
-
+    
     st.title("🤖 Web Automation Assistant")
     st.subheader("Powered by Mistral AI & Computer Vision")
     
@@ -348,7 +348,7 @@ def main():
                 add_message("assistant", "Initializing E2B Sandbox with API key from environment variable.", "info")
             else:
                 # This case should ideally be prevented by the UI checks, but as a safeguard:
-                st.session_state.e2b_session = Sandbox()
+                st.session_state.e2b_session = Sandbox() 
                 add_message("assistant", "Attempting to initialize E2B Sandbox without explicit API key (might use system default or fail).", "info")
 
             st.session_state.e2b_session.stream.start() # Start streaming
@@ -372,25 +372,12 @@ def main():
         try:
             if hasattr(st.session_state.e2b_session, 'stream') and st.session_state.e2b_session.stream:
                 st.session_state.e2b_session.stream.stop() # Stop streaming
-
+            
             print(f"Attempting to close E2B session. Object type: {type(st.session_state.e2b_session)}")
-            # Attempting to use .destroy() instead of .close() due to AttributeError
-            if hasattr(st.session_state.e2b_session, 'destroy'):
-                st.session_state.e2b_session.destroy()
-            else:
-                # Fallback or log if destroy also doesn't exist, though problem description implies close was the issue
-                # For now, if destroy isn't there, we'll let it raise an error to see what's happening
-                # or one might add a specific log like:
-                # add_message("assistant", "E2B session object does not have .destroy() method either.", "error")
-                # For this specific task, the focus is trying destroy() as an alternative to close().
-                # If 'close' was the original attempt and failed with AttributeError, and if 'destroy' also fails,
-                # it indicates a deeper issue with the e2b_session object's state or type.
-                # Given the error was "'Sandbox' object has no attribute 'close'", we assume .destroy() is the target.
-                st.session_state.e2b_session.close() # Re-attempt close if destroy is not found, to ensure an error is raised if neither works.
-
-            add_message("assistant", "E2B Desktop session stopped/destroyed.", "success")
+            st.session_state.e2b_session.kill() # Using kill() method as confirmed by documentation
+            add_message("assistant", "E2B Desktop session killed.", "success")
         except Exception as e:
-            add_message("assistant", f"Error stopping E2B Desktop: {str(e)}", "error")
+            add_message("assistant", f"Error killing E2B Desktop session: {str(e)}", "error")
         finally:
             st.session_state.e2b_session = None
             st.session_state.e2b_url = None
@@ -407,7 +394,7 @@ def main():
 
     # Main chat interface
     st.write("Enter your automation objective and I'll help you navigate the web!")
-
+    
     # Display chat history
     display_chat_history()
     
@@ -427,7 +414,7 @@ def main():
         if not st.session_state.mistral_client:
             add_message("assistant", "Please configure your Mistral AI API key in the sidebar first.", "error")
             st.rerun()
-            return
+            return 
         
         # This check is now implicitly conditional: only runs if E2B is not active.
         # No 'else' needed because the E2B active case returns early.
@@ -444,7 +431,7 @@ def main():
         st.session_state.execution_summary = [] # Reset summary
 
         add_message("assistant", f"Received new objective: {user_input}. Initializing orchestrator and planning steps...")
-
+        
         # Reset todo.md
         todo_manager.reset_todo_file(user_input)
         add_message("assistant", f"📝 `todo.md` reset for objective: {user_input}", "info")
@@ -498,7 +485,7 @@ def main():
             st.session_state.orchestrator_active = False
 
         st.rerun()
-
+    
     # Orchestrator Main Execution Loop
     if st.session_state.get('orchestrator_active') and st.session_state.todo_tasks:
         if not st.session_state.browser or not st.session_state.mistral_client:
@@ -569,7 +556,7 @@ def main():
                 st.session_state.orchestrator_active = False
                 st.rerun()
                 return
-
+            
             try:
                 with open(annotated_image_path_after_action, 'rb') as img_file:
                     image_data_after_action = base64.b64encode(img_file.read()).decode('utf-8')
@@ -603,7 +590,7 @@ def main():
                     add_message("assistant", f"ℹ️ Task '{current_task}' not yet fully completed or action was part of a multi-step task. Will re-evaluate or proceed.", "info")
                     # The loop will re-run with the same task_idx if not incremented,
                     # or move to the next if incremented. analyze_and_decide should handle sub-steps.
-
+            
             except Exception as e:
                 add_message("assistant", f"Error during state analysis phase: {str(e)}\n{traceback.format_exc()}", "error")
                 st.session_state.orchestrator_active = False
