@@ -49,6 +49,8 @@ def initialize_session_state():
         st.session_state.e2b_url = None
     if 'e2b_api_key_input' not in st.session_state: # Initialize E2B API key input
         st.session_state.e2b_api_key_input = ""
+    if 'e2b_should_be_running' not in st.session_state:
+        st.session_state.e2b_should_be_running = False
     
 
 def setup_sidebar():
@@ -72,32 +74,9 @@ def setup_sidebar():
         st.sidebar.warning("⚠️ Please enter your Mistral AI API key")
     
     st.sidebar.divider()
-    
-    # Browser Controls
-    st.sidebar.subheader("Browser Controls")
-    
-    if st.sidebar.button("🚀 Start Browser", disabled=st.session_state.automation_active):
-        try:
-            st.session_state.browser = BrowserAutomation()
-            st.session_state.browser.start_browser()
-            st.sidebar.success("✅ Browser started")
-        except Exception as e:
-            st.sidebar.error(f"❌ Failed to start browser: {str(e)}")
-    
-    if st.sidebar.button("🛑 Stop Browser", disabled=not st.session_state.automation_active):
-        try:
-            if st.session_state.browser:
-                st.session_state.browser.close()
-                st.session_state.browser = None
-                st.session_state.automation_active = False
-            st.sidebar.success("✅ Browser stopped")
-        except Exception as e:
-            st.sidebar.error(f"❌ Failed to stop browser: {str(e)}")
 
-    st.sidebar.divider() # Added to maintain separation
-
-    # E2B Desktop
-    st.sidebar.subheader("E2B Desktop")
+    # E2B Desktop Configuration
+    st.sidebar.subheader("E2B Desktop Configuration")
     st.session_state.e2b_api_key_input = st.sidebar.text_input(
         "E2B API Key",
         type="password",
@@ -110,22 +89,77 @@ def setup_sidebar():
     elif os.getenv("E2B_API_KEY"):
         st.sidebar.info("ℹ️ E2B API Key configured from environment variable.")
     else: # This is the case where neither is set.
-        st.sidebar.warning("⚠️ E2B API Key not set. Please enter it above or set E2B_API_KEY environment variable.")
+        st.sidebar.warning("⚠️ E2B API Key not set. Please enter it or set E2B_API_KEY env var.")
 
     st.session_state.e2b_desktop_enabled = st.sidebar.toggle(
-        "Enable E2B Desktop",
-        value=st.session_state.e2b_desktop_enabled
+        "Enable E2B Desktop Mode",
+        value=st.session_state.e2b_desktop_enabled,
+        help="Toggle between Browser mode and E2B Desktop mode."
     )
-    
+
+    st.sidebar.divider()
+
+    # Unified Session Controls
+    st.sidebar.subheader("Session Controls")
+
+    if not st.session_state.e2b_desktop_enabled: # Browser Mode Controls
+        if st.sidebar.button("🚀 Start Browser", disabled=st.session_state.get('automation_active', False)):
+            try:
+                st.session_state.browser = BrowserAutomation()
+                st.session_state.browser.start_browser()
+                st.session_state.automation_active = True # Explicitly set
+                st.sidebar.success("✅ Browser started")
+                st.rerun()
+            except Exception as e:
+                st.sidebar.error(f"❌ Failed to start browser: {str(e)}")
+
+        if st.sidebar.button("🛑 Stop Browser", disabled=not st.session_state.get('automation_active', False)):
+            try:
+                if st.session_state.browser:
+                    st.session_state.browser.close()
+                    st.session_state.browser = None
+                st.session_state.automation_active = False # Explicitly set
+                st.sidebar.success("✅ Browser stopped")
+                st.rerun()
+            except Exception as e:
+                st.sidebar.error(f"❌ Failed to stop browser: {str(e)}")
+    else: # E2B Desktop Mode Controls
+        if st.sidebar.button("🚀 Start E2B Desktop", disabled=st.session_state.get('e2b_should_be_running', False)):
+            st.session_state.e2b_should_be_running = True
+            st.sidebar.info("E2B Desktop start initiated...") # User feedback
+            st.rerun()
+
+        if st.sidebar.button("🛑 Stop E2B Desktop", disabled=not st.session_state.get('e2b_should_be_running', False)):
+            st.session_state.e2b_should_be_running = False
+            st.sidebar.info("E2B Desktop stop initiated...") # User feedback
+            st.rerun()
+
     # Status indicators
     st.sidebar.divider()
     st.sidebar.subheader("Status")
-    
-    browser_status = "🟢 Running" if st.session_state.browser and st.session_state.automation_active else "🔴 Stopped"
-    st.sidebar.write(f"Browser: {browser_status}")
-    
-    api_status = "🟢 Connected" if st.session_state.mistral_client else "🔴 Not configured"
-    st.sidebar.write(f"Mistral AI: {api_status}")
+
+    # Display current mode
+    current_mode = "E2B Desktop" if st.session_state.e2b_desktop_enabled else "Browser"
+    st.sidebar.write(f"Active Mode: {current_mode}")
+
+    # Display status for the active mode
+    if not st.session_state.e2b_desktop_enabled: # Browser Mode
+        browser_status_text = "🟢 Running" if st.session_state.get('automation_active', False) else "🔴 Stopped"
+        st.sidebar.write(f"Browser Session: {browser_status_text}")
+    else: # E2B Desktop Mode
+        if st.session_state.get('e2b_should_be_running') and st.session_state.get('e2b_session'):
+            e2b_status_text = "🟢 Running"
+        elif st.session_state.get('e2b_should_be_running') and not st.session_state.get('e2b_session'):
+            # This means it's set to run, but session not established yet by main()
+            e2b_status_text = "⏳ Starting..."
+        else:
+            e2b_status_text = "🔴 Stopped"
+        st.sidebar.write(f"E2B Session: {e2b_status_text}")
+
+    # Keep Mistral AI Status
+    if 'mistral_client' in st.session_state:
+      api_status = "🟢 Connected" if st.session_state.mistral_client else "🔴 Not configured"
+      st.sidebar.write(f"Mistral AI: {api_status}")
 
 def display_chat_history():
     """Display chat message history"""
@@ -288,11 +322,14 @@ def main():
     initialize_session_state()
     setup_sidebar()
 
-    # E2B Desktop Management
-    if st.session_state.e2b_desktop_enabled and st.session_state.e2b_session is None:
-        add_message("assistant", "Starting E2B Desktop session...", "info")
+    # E2B Desktop Management based on e2b_should_be_running
+    # Start E2B session if in E2B mode, should be running, and no session exists
+    if st.session_state.e2b_desktop_enabled and \
+       st.session_state.e2b_should_be_running and \
+       st.session_state.e2b_session is None:
+        add_message("assistant", "Starting E2B Desktop session as per request...", "info")
         try:
-            # Forcing synchronous execution if e2b.Desktop() is async
+            # Forcing synchronous execution if e2b.Sandbox() is async
             # This might block Streamlit's main thread, consider true async handling if performance issues arise.
             # However, for now, let's assume it can be called like this or it's a fast async op.
             # If e2b.Desktop() is strictly async and must be awaited:
@@ -321,14 +358,17 @@ def main():
             st.rerun()
         except Exception as e:
             add_message("assistant", f"Error starting E2B Desktop: {str(e)}", "error")
-            st.session_state.e2b_desktop_enabled = False # Toggle back
-            st.session_state.e2b_session = None
+            st.session_state.e2b_session = None # Ensure session is None on error
             st.session_state.e2b_url = None
-            # Force a rerun to update the UI (e.g., hide iframe, update toggle)
+            st.session_state.e2b_should_be_running = False # Reset the trigger
+            # Force a rerun to update the UI (e.g., hide iframe, update toggle, update status)
             st.rerun()
 
-    elif not st.session_state.e2b_desktop_enabled and st.session_state.e2b_session is not None:
-        add_message("assistant", "Stopping E2B Desktop session...", "info")
+    # Stop E2B session if in E2B mode, should NOT be running, and a session exists
+    elif st.session_state.e2b_desktop_enabled and \
+         not st.session_state.e2b_should_be_running and \
+         st.session_state.e2b_session is not None:
+        add_message("assistant", "Stopping E2B Desktop session as per request...", "info")
         try:
             if hasattr(st.session_state.e2b_session, 'stream') and st.session_state.e2b_session.stream:
                 st.session_state.e2b_session.stream.stop() # Stop streaming
@@ -343,15 +383,12 @@ def main():
             # Force a rerun to update the UI (e.g., hide iframe)
             st.rerun()
 
-    # Display E2B Desktop if session is active
-    if st.session_state.e2b_session and st.session_state.e2b_url:
+    # Display E2B Desktop if session is active and in E2B mode
+    if st.session_state.e2b_desktop_enabled and \
+       st.session_state.e2b_session and \
+       st.session_state.e2b_url:
         st.components.v1.iframe(st.session_state.e2b_url, height=600)
-        st.sidebar.success("✅ E2B Desktop Running") # Indicate in sidebar
-    elif st.session_state.e2b_desktop_enabled and not st.session_state.e2b_url:
-        # If enabled but URL not yet available (e.g. still starting)
-        st.sidebar.info("⏳ E2B Desktop Starting...")
-    else:
-        st.sidebar.info("ℹ️ E2B Desktop Stopped")
+    # The sidebar status messages are now handled in setup_sidebar()
 
 
     # Main chat interface
