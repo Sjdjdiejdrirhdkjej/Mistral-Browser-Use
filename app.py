@@ -1,8 +1,10 @@
 import streamlit as st
 import os
-# import shutil # Removed as it's no longer used
+import shutil
 import time
 import base64
+import subprocess # Added
+import requests # Added
 from datetime import datetime
 from browser_automation import BrowserAutomation
 # from mistral_client import MistralClient # Removed
@@ -142,72 +144,94 @@ def initialize_session_state():
     if 'user_input_for_planning' not in st.session_state:
         st.session_state.user_input_for_planning = None
     
+def is_ollama_installed() -> bool:
+    """Checks if the 'ollama' command-line tool is installed and in the PATH."""
+    return shutil.which('ollama') is not None
 
 def setup_sidebar():
     """Setup sidebar for API key configuration and controls"""
     st.sidebar.title("🔧 Configuration")
 
-    # LlamaIndexClient Initialization (replaces AI Provider Selection)
-    st.sidebar.subheader("LlamaIndex & Ollama Setup")
-    ollama_base_url_sidebar = st.sidebar.text_input(
-        "Ollama Base URL",
-        value=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-        help="URL of your running Ollama instance."
-    )
+    # Ollama Installation Check
+    if not is_ollama_installed():
+        st.sidebar.error("Ollama is not installed. This application requires Ollama to function.")
+        st.sidebar.markdown("Please install it from [https://ollama.com](https://ollama.com) and ensure 'ollama' is in your system PATH.")
+        st.session_state.ollama_setup_error = True
+        # Disable further UI or return if critical parts of the app depend on this.
+        # For now, we'll let other elements render but they should check ollama_setup_error.
+    else:
+        st.sidebar.info("✅ Ollama installation found.")
+        st.session_state.ollama_setup_error = False
 
-    # Attempt to initialize LlamaIndexClient if not already done or if URL changed
-    # For simplicity, we re-initialize if URL changes. More complex state management could preserve it.
-    if 'llamaindex_client' not in st.session_state or \
-       st.session_state.llamaindex_client is None or \
-       (st.session_state.llamaindex_client and st.session_state.llamaindex_client.ollama_base_url != ollama_base_url_sidebar):
-        try:
-            # Defaulting to qwen2.5vl as per LlamaIndexClient's vision model default
-            # and llama3.2 as the text model default.
-            st.session_state.llamaindex_client = LlamaIndexClient(ollama_base_url=ollama_base_url_sidebar)
-            st.sidebar.success(f"✅ LlamaIndexClient initialized for models '{st.session_state.llamaindex_client.vision_model_name}' (vision) and '{st.session_state.llamaindex_client.text_model_name}' (text).")
-        except Exception as e:
-            st.sidebar.error(f"❌ Failed to initialize LlamaIndexClient: {e}")
-            st.session_state.llamaindex_client = None # Ensure it's None on failure
+    # Ollama Server Management (Check and Attempt Start)
+    # This section only runs if Ollama CLI is installed
+    if not st.session_state.get('ollama_setup_error', True):
+        st.sidebar.subheader("Ollama Server Management")
+        if 'ollama_server_running' not in st.session_state:
+             st.session_state.ollama_server_running = False # Initialize
 
-    # Ollama Service and Model Checks (using LlamaIndexClient methods)
-    if st.session_state.llamaindex_client:
-        # Vision Model (qwen2.5vl)
-        target_vision_model = st.session_state.llamaindex_client.vision_model_name # Should be "qwen2.5vl"
-        try:
-            if st.session_state.llamaindex_client.is_model_available(target_vision_model):
-                st.sidebar.success(f"✅ Vision Model '{target_vision_model}' is available.")
-            else:
-                st.sidebar.warning(f"⚠️ Vision Model '{target_vision_model}' not found locally.")
-                if st.sidebar.button(f"📥 Download '{target_vision_model}' Model"):
-                    with st.spinner(f"Pulling '{target_vision_model}'... This may take a while. See console for progress."):
-                        success, message = st.session_state.llamaindex_client.pull_model(target_vision_model)
-                    if success:
-                        st.sidebar.success(message)
-                        st.rerun()
+        if is_ollama_server_running():
+            st.session_state.ollama_server_running = True
+            st.sidebar.info("✅ Ollama server is running.")
+        else:
+            st.sidebar.warning("Ollama server is not running.")
+            if st.sidebar.button("🚀 Attempt to Start Ollama Server"):
+                with st.spinner("Attempting to start Ollama server..."):
+                    if start_ollama_server():
+                        st.sidebar.info("Ollama server starting... waiting a few seconds to confirm.")
+                        time.sleep(5) # Wait for server to initialize
+                        if is_ollama_server_running():
+                            st.session_state.ollama_server_running = True
+                            st.sidebar.success("✅ Ollama server started and is running.")
+                            st.rerun() # Rerun to update UI based on server running
+                        else:
+                            st.session_state.ollama_server_running = False
+                            st.sidebar.error("❌ Failed to confirm Ollama server is running after start attempt. Please start it manually (e.g., `ollama serve`).")
                     else:
-                        st.sidebar.error(message)
+                        st.session_state.ollama_server_running = False
+                        # Error message already shown by start_ollama_server()
+                        st.sidebar.error("❌ Failed to initiate Ollama server startup. Please start it manually.")
+            else:
+                 st.session_state.ollama_server_running = False # Explicitly set if not running and no start attempt
+                 st.sidebar.caption("If Ollama server is not running, click the button above or start it manually (e.g., `ollama serve`).")
 
-            # Text Model (e.g., llama3.2), if different from vision model
-            target_text_model = st.session_state.llamaindex_client.text_model_name
-            if target_text_model != target_vision_model:
-                if st.session_state.llamaindex_client.is_model_available(target_text_model):
-                    st.sidebar.success(f"✅ Text Model '{target_text_model}' is available.")
+
+    # LlamaIndexClient Initialization and Ollama Model Setup
+    # This section will only proceed if Ollama CLI is installed AND server is (now) running
+    if not st.session_state.get('ollama_setup_error', True) and st.session_state.get('ollama_server_running', False):
+        st.sidebar.subheader("LlamaIndex Client & Models")
+
+        if 'llamaindex_client' not in st.session_state or st.session_state.llamaindex_client is None:
+            try:
+                st.session_state.llamaindex_client = LlamaIndexClient()
+                st.sidebar.success(f"✅ LlamaIndexClient initialized for model '{st.session_state.llamaindex_client.model_name}'.")
+            except Exception as e:
+                st.sidebar.error(f"❌ Failed to initialize LlamaIndexClient: {e}")
+                st.session_state.llamaindex_client = None
+
+        if st.session_state.llamaindex_client:
+            target_model = st.session_state.llamaindex_client.model_name
+            try:
+                if st.session_state.llamaindex_client.is_model_available(target_model):
+                    st.sidebar.success(f"✅ Model '{target_model}' is available.")
                 else:
-                    st.sidebar.warning(f"⚠️ Text Model '{target_text_model}' not found locally.")
-                    if st.sidebar.button(f"📥 Download '{target_text_model}' Model"):
-                        with st.spinner(f"Pulling '{target_text_model}'... This may take a while. See console for progress."):
-                            success, message = st.session_state.llamaindex_client.pull_model(target_text_model)
+                    st.sidebar.warning(f"⚠️ Model '{target_model}' not found locally.")
+                    if st.sidebar.button(f"📥 Download '{target_model}' Model"):
+                        with st.spinner(f"Pulling '{target_model}'... This may take a while. See console for progress."):
+                            success, message = st.session_state.llamaindex_client.pull_model(target_model)
                         if success:
                             st.sidebar.success(message)
                             st.rerun()
                         else:
                             st.sidebar.error(message)
-        except Exception as e: # Broad exception for issues like ollama service not running during model checks
-            st.sidebar.error(f"❌ Error checking/pulling Ollama models: {e}. Ensure Ollama is running at {ollama_base_url_sidebar}.")
-            # We don't set llamaindex_client to None here, as it might have initialized but model listing failed.
-            # The orchestrator logic will handle cases where client is present but models are not usable.
-    else:
-        st.sidebar.warning("LlamaIndexClient not initialized. Please ensure Ollama URL is correct and service is running.")
+            except Exception as e:
+                st.sidebar.error(f"❌ Error checking/pulling Ollama model '{target_model}': {e}. Ensure Ollama server is responsive.")
+
+    # Handling cases where setup is incomplete for the LlamaIndex/Ollama Status section
+    elif not st.session_state.get('ollama_setup_error', True) and not st.session_state.get('ollama_server_running', False):
+        st.sidebar.warning("Ollama server is not running. Client & model checks skipped.")
+    elif 'ollama_setup_error' not in st.session_state :
+        pass # Initial state before checks run
 
     st.sidebar.divider()
     # Browser Controls
@@ -239,35 +263,23 @@ def setup_sidebar():
     st.sidebar.write(f"🌐 Browser: {browser_status}")
 
     st.sidebar.subheader("LlamaIndex/Ollama Status")
-    if st.session_state.get('llamaindex_client'):
+    if st.session_state.get('ollama_setup_error', True):
+        st.sidebar.write("🤖 Ollama CLI: 🔴 Not found or error during setup.")
+    elif not st.session_state.get('ollama_server_running', False): # Server explicitly not running
+        st.sidebar.write(f"🤖 Ollama Server: 🔴 Not Running. Please attempt to start it via 'Ollama Server Management' section if Ollama is installed.")
+    elif st.session_state.get('llamaindex_client'): # Server is running, check client and models
         client = st.session_state.llamaindex_client
-        # Basic check: can we list models? (Indicates Ollama service is likely running)
-        # This is a simplified check. A dedicated health check endpoint in Ollama would be better.
-        ollama_running = False
+        st.sidebar.write(f"🤖 Ollama Service: ✅ Running at {client.ollama_base_url}")
+        # This check is slightly redundant if server check passed, but confirms model availability via client
+        model_available = False
         try:
-            # Use a quick check, like listing models, but don't display the full list here.
-            # The is_model_available internally calls list, so we rely on its error handling.
-            # For a direct check if ollama is running, a more lightweight ping would be ideal if available.
-            # For now, if client exists, we assume it tried to connect. Model checks below give more detail.
-            # A more direct check:
-            test_list = client.is_model_available(client.vision_model_name) # This will try 'ollama list'
-            ollama_running = True # If is_model_available didn't throw connection error, assume running
-        except Exception: # Broadly catch if is_model_available fails due to connection
-            ollama_running = False
-
-        if ollama_running:
-            st.sidebar.write(f"🤖 Ollama Service: ✅ Detected at {client.ollama_base_url}")
-            vision_model_status = f"✅ Vision Model ({client.vision_model_name}): Available" if client.is_model_available(client.vision_model_name) else f"⚠️ Vision Model ({client.vision_model_name}): Not Found"
-            text_model_status = f"✅ Text Model ({client.text_model_name}): Available" if client.is_model_available(client.text_model_name) else f"⚠️ Text Model ({client.text_model_name}): Not Found"
-            st.sidebar.write(vision_model_status)
-            if client.text_model_name != client.vision_model_name:
-                st.sidebar.write(text_model_status)
-            if "Not Found" in vision_model_status or ("Not Found" in text_model_status and client.text_model_name != client.vision_model_name):
-                st.sidebar.caption("Use Ollama Configuration above to download missing models.")
-        else:
-            st.sidebar.write(f"🤖 Ollama Service: 🔴 Not Detected at {client.ollama_base_url}. Ensure 'ollama serve' is running.")
-    else:
-        st.sidebar.write("🤖 LlamaIndex/Ollama: 🔴 Client Not Initialized")
+            model_available = client.is_model_available(client.model_name)
+        except Exception: # Catch if is_model_available itself fails (e.g. client init but server dies)
+            pass
+        model_status = f"✅ Model ({client.model_name}): Available" if model_available else f"⚠️ Model ({client.model_name}): Not Found (Download in 'LlamaIndex Client & Models' section)"
+        st.sidebar.write(model_status)
+    else: # Ollama installed, server running, but client failed to initialize
+        st.sidebar.write("🤖 LlamaIndex/Ollama: 🔴 Client Not Initialized (Ollama server might be running but client init failed. Check logs).")
 
     # Debug Log Expander and Screenshot Count Display REMOVED from sidebar
 
@@ -453,11 +465,13 @@ def main():
     
     st.title("Web Automation Assistant")
     # Subheader will be more generic now, or dynamically update if we know client model
-    if st.session_state.get('llamaindex_client'):
+    if st.session_state.get('ollama_setup_error'):
+        st.subheader("Ollama not detected. Please install and configure Ollama.")
+    elif st.session_state.get('llamaindex_client'):
         client = st.session_state.llamaindex_client
-        st.subheader(f"Powered by LlamaIndex & Ollama ({client.vision_model_name} / {client.text_model_name})")
+        st.subheader(f"Powered by LlamaIndex & Ollama ({client.model_name})")
     else:
-        st.subheader("Powered by LlamaIndex & Ollama (Client not initialized)")
+        st.subheader("Powered by LlamaIndex & Ollama (Client not initialized or Ollama service issue)")
 
     initialize_session_state() # Initializes 'messages' and other states.
     setup_sidebar()
@@ -474,27 +488,22 @@ def main():
     if user_input:
         add_message("user", user_input)
 
-        # Check prerequisites (LlamaIndexClient and Browser)
-        if not st.session_state.get('llamaindex_client'):
-            add_message("assistant", "LlamaIndexClient not initialized. Please check Ollama setup in the sidebar.", "error")
+        # Check prerequisites: Ollama installed, LlamaIndexClient initialized, Browser started, Models available
+        if st.session_state.get('ollama_setup_error', True):
+            add_message("assistant", "Ollama is not installed or set up correctly. Please check the sidebar.", "error")
             st.rerun()
             return
 
-        # Further check: ensure the necessary models are available via the client
-        # This is crucial before starting any AI-dependent workflow.
+        if not st.session_state.get('llamaindex_client') or not st.session_state.get('ollama_server_running'):
+            add_message("assistant", "LlamaIndexClient is not ready or Ollama server is not running. Please check setup in the sidebar.", "error")
+            st.rerun()
+            return
+
         client = st.session_state.llamaindex_client
-        vision_model_ok = client.is_model_available(client.vision_model_name)
-        text_model_ok = client.is_model_available(client.text_model_name)
-
-        if not vision_model_ok:
-            add_message("assistant", f"Vision model '{client.vision_model_name}' is not available in Ollama. Please download it using the sidebar.", "error")
+        if not client.is_model_available(client.model_name): # Check for the primary model
+            add_message("assistant", f"Required model '{client.model_name}' is not available in Ollama. Please download it using the sidebar.", "error")
             st.rerun()
             return
-        if not text_model_ok: # If text model is different and also not available
-             add_message("assistant", f"Text model '{client.text_model_name}' is not available in Ollama. Please download it using the sidebar.", "error")
-             st.rerun()
-             return
-
 
         if not st.session_state.browser:
             add_message("assistant", "Please start the browser first using the sidebar controls.", "error")

@@ -23,11 +23,11 @@ DEFAULT_QWEN_MODEL = "qwen2.5vl"
 class LlamaIndexClient:
     def __init__(self,
                  model_name: str = DEFAULT_QWEN_MODEL, # Single model_name for qwen2.5vl
-                 ollama_base_url: str = OLLAMA_BASE_URL,
+                 # ollama_base_url: str = OLLAMA_BASE_URL, # Removed from constructor
                  request_timeout: float = 120.0):
 
         self.model_name = model_name # This will be "qwen2.5vl"
-        self.ollama_base_url = ollama_base_url
+        self.ollama_base_url = OLLAMA_BASE_URL # Hardcoded to default
         self.request_timeout = request_timeout
 
         try:
@@ -35,7 +35,7 @@ class LlamaIndexClient:
             # Forcing qwen2.5vl for text generation tasks as well for consistency.
             self.llm = Ollama(
                 model=self.model_name,
-                base_url=self.ollama_base_url,
+                base_url=self.ollama_base_url, # Explicitly set to default
                 request_timeout=self.request_timeout,
                 temperature=0.1,
                 format="json" # Request JSON output by default for text generation
@@ -44,7 +44,7 @@ class LlamaIndexClient:
             # Initialize MultiModal LLM for vision tasks, using the same qwen2.5vl model
             self.multi_modal_llm = OllamaMultiModal(
                 model=self.model_name,
-                base_url=self.ollama_base_url,
+                base_url=self.ollama_base_url, # Explicitly set to default
                 request_timeout=self.request_timeout,
                 temperature=0.1,
                 format="json" # Request JSON output by default for multimodal tasks
@@ -350,8 +350,8 @@ if __name__ == '__main__':
 
     try:
         client = LlamaIndexClient(
-            model_name=DEFAULT_QWEN_MODEL, # Explicitly testing with qwen2.5vl
-            ollama_base_url=OLLAMA_BASE_URL
+            model_name=DEFAULT_QWEN_MODEL # Explicitly testing with qwen2.5vl
+            # ollama_base_url is no longer passed
         )
         print("-" * 20)
 

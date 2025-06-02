@@ -52,24 +52,28 @@ class TestLlamaIndexClient(unittest.TestCase):
             format="json"
         )
         self.assertEqual(client.model_name, "qwen2.5vl")
+        self.assertEqual(client.ollama_base_url, "http://localhost:11434") # Check that base_url is now hardcoded
 
-    def test_initialization_custom_model(self, MockOllama, MockOllamaMultiModal):
-        client = LlamaIndexClient(model_name="custom_model", ollama_base_url="http://custom:1111", request_timeout=60.0)
+    def test_initialization_custom_model_no_base_url_param(self, MockOllama, MockOllamaMultiModal):
+        # Test with only model_name and request_timeout, base_url should be default
+        client = LlamaIndexClient(model_name="custom_model", request_timeout=60.0)
         MockOllama.assert_called_once_with(
             model="custom_model",
-            base_url="http://custom:1111",
+            base_url="http://localhost:11434", # Assert default base_url
             request_timeout=60.0,
             temperature=0.1,
             format="json"
         )
         MockOllamaMultiModal.assert_called_once_with(
             model="custom_model",
-            base_url="http://custom:1111",
+            base_url="http://localhost:11434", # Assert default base_url
             request_timeout=60.0,
             temperature=0.1,
             format="json"
         )
         self.assertEqual(client.model_name, "custom_model")
+        self.assertEqual(client.ollama_base_url, "http://localhost:11434")
+
 
     @patch('llamaindex_client.subprocess.run')
     def test_is_model_available_success(self, mock_subproc_run, MockOllama, MockOllamaMultiModal):
