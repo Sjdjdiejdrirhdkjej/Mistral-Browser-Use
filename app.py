@@ -549,9 +549,9 @@ def main():
                 )
             except Exception as e:
                 add_message("assistant", f"Error generating steps with {client_name}: {e}", "error")
-                    st.session_state.orchestrator_active = False
-                    st.rerun()
-                    return
+                st.session_state.orchestrator_active = False
+                st.rerun()
+                return
 
 
             if not generated_steps:
