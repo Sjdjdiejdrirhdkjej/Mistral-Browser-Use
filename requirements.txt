@@ -2,4 +2,4 @@ selenium
 opencv-python
 geckodriver
 webdriver-manager
-e2b
+e2b-desktop

@@ -9,7 +9,7 @@ from element_detector import ElementDetector
 import todo_manager # Added import
 import traceback
 import re # Added import
-from e2b import Desktop
+from e2b_desktop import Sandbox # Corrected import
 import asyncio
 # st.components.v1.iframe is available via streamlit import as st
 
@@ -96,6 +96,8 @@ def setup_sidebar():
 
     # E2B Desktop
     st.sidebar.subheader("E2B Desktop")
+    if not os.getenv("E2B_API_KEY"):
+        st.sidebar.warning("⚠️ E2B_API_KEY not set. E2B Desktop may not function. Please set it as an environment variable.")
     st.session_state.e2b_desktop_enabled = st.sidebar.toggle(
         "Enable E2B Desktop",
         value=st.session_state.e2b_desktop_enabled
@@ -285,11 +287,12 @@ def main():
             # with st.spinner("Starting E2B Desktop..."):
             #   loop = asyncio.new_event_loop()
             #   asyncio.set_event_loop(loop)
-            #   st.session_state.e2b_session = loop.run_until_complete(Desktop())
+            #   st.session_state.e2b_session = loop.run_until_complete(Sandbox()) # Corrected instantiation
             # For now, direct call as per initial plan assuming it's either sync or handles its own loop:
-            st.session_state.e2b_session = Desktop()
-            st.session_state.e2b_url = st.session_state.e2b_session.get_url()
-            add_message("assistant", f"E2B Desktop session started. URL: {st.session_state.e2b_url}", "success")
+            st.session_state.e2b_session = Sandbox() # Corrected instantiation
+            st.session_state.e2b_session.stream.start() # Start streaming
+            st.session_state.e2b_url = st.session_state.e2b_session.stream.get_url() # Get stream URL
+            add_message("assistant", f"E2B Desktop stream started. URL: {st.session_state.e2b_url}", "success")
             # Force a rerun to update the UI with the iframe and messages
             st.rerun()
         except Exception as e:
@@ -303,6 +306,8 @@ def main():
     elif not st.session_state.e2b_desktop_enabled and st.session_state.e2b_session is not None:
         add_message("assistant", "Stopping E2B Desktop session...", "info")
         try:
+            if hasattr(st.session_state.e2b_session, 'stream') and st.session_state.e2b_session.stream:
+                st.session_state.e2b_session.stream.stop() # Stop streaming
             # Similar async considerations as above for close()
             st.session_state.e2b_session.close()
             add_message("assistant", "E2B Desktop session stopped.", "success")
