@@ -2,6 +2,6 @@ selenium
 opencv-python
 geckodriver
 webdriver-manager
-llama-index-core
-llama-index-llms-llama-cpp
+#llama-index-core
+#llama-index-llms-llama-cpp
 pytest
