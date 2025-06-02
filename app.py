@@ -47,6 +47,8 @@ def initialize_session_state():
         st.session_state.e2b_session = None
     if 'e2b_url' not in st.session_state:
         st.session_state.e2b_url = None
+    if 'e2b_api_key_input' not in st.session_state: # Initialize E2B API key input
+        st.session_state.e2b_api_key_input = ""
     
 
 def setup_sidebar():
@@ -96,8 +98,20 @@ def setup_sidebar():
 
     # E2B Desktop
     st.sidebar.subheader("E2B Desktop")
-    if not os.getenv("E2B_API_KEY"):
-        st.sidebar.warning("⚠️ E2B_API_KEY not set. E2B Desktop may not function. Please set it as an environment variable.")
+    st.session_state.e2b_api_key_input = st.sidebar.text_input(
+        "E2B API Key",
+        type="password",
+        value=st.session_state.e2b_api_key_input,
+        help="Enter your E2B API key. This will override the E2B_API_KEY environment variable if set."
+    )
+
+    if st.session_state.e2b_api_key_input:
+        st.sidebar.success("✅ E2B API Key configured from UI.")
+    elif os.getenv("E2B_API_KEY"):
+        st.sidebar.info("ℹ️ E2B API Key configured from environment variable.")
+    else: # This is the case where neither is set.
+        st.sidebar.warning("⚠️ E2B API Key not set. Please enter it above or set E2B_API_KEY environment variable.")
+
     st.session_state.e2b_desktop_enabled = st.sidebar.toggle(
         "Enable E2B Desktop",
         value=st.session_state.e2b_desktop_enabled
@@ -287,9 +301,19 @@ def main():
             # with st.spinner("Starting E2B Desktop..."):
             #   loop = asyncio.new_event_loop()
             #   asyncio.set_event_loop(loop)
-            #   st.session_state.e2b_session = loop.run_until_complete(Sandbox()) # Corrected instantiation
+            #   st.session_state.e2b_session = loop.run_until_complete(Sandbox(api_key=st.session_state.e2b_api_key_input if st.session_state.e2b_api_key_input else os.getenv("E2B_API_KEY")))
             # For now, direct call as per initial plan assuming it's either sync or handles its own loop:
-            st.session_state.e2b_session = Sandbox() # Corrected instantiation
+            if st.session_state.e2b_api_key_input:
+                st.session_state.e2b_session = Sandbox(api_key=st.session_state.e2b_api_key_input)
+                add_message("assistant", "Initializing E2B Sandbox with API key from UI.", "info")
+            elif os.getenv("E2B_API_KEY"): # Check if env var is available as a fallback before calling Sandbox() without key
+                st.session_state.e2b_session = Sandbox() # SDK will pick up env var
+                add_message("assistant", "Initializing E2B Sandbox with API key from environment variable.", "info")
+            else:
+                # This case should ideally be prevented by the UI checks, but as a safeguard:
+                st.session_state.e2b_session = Sandbox()
+                add_message("assistant", "Attempting to initialize E2B Sandbox without explicit API key (might use system default or fail).", "info")
+
             st.session_state.e2b_session.stream.start() # Start streaming
             st.session_state.e2b_url = st.session_state.e2b_session.stream.get_url() # Get stream URL
             add_message("assistant", f"E2B Desktop stream started. URL: {st.session_state.e2b_url}", "success")
