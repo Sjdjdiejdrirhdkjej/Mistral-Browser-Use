@@ -623,6 +623,8 @@ def main():
                 st.rerun()
                 # return
             else:
+                add_message("assistant", "Debug: Screenshot successful, proceeding to AI prompt.", "info")
+                add_message("assistant", "Debug: Preparing AI system prompt.", "info")
                 e2b_system_prompt = """
 You are an expert AI assistant tasked with automating a remote desktop environment based on user objectives. You will be provided with a user's objective and a gridded screenshot of the current desktop state. The screenshot is overlaid with a 10x10 grid (labeled A1-A10, B1-B10, ..., J1-J10 where letters are rows A-J and numbers are columns 1-10). Your goal is to determine the single next best action to perform on the desktop to achieve the objective.
 
@@ -654,6 +656,7 @@ Analyze the provided gridded screenshot and output your next action.
                     else: # Mistral client is available
                         multimodal_prompt = f"Objective: {st.session_state.current_objective}\nPrevious Action: {st.session_state.e2b_last_action or 'None'}\nAnalyze the screenshot and follow system instructions."
                         
+                        add_message("assistant", "Debug: About to call Mistral client.", "info")
                         response_payload = st.session_state.mistral_client.analyze_and_decide(
                             image_b64=image_data_for_ai,
                             user_prompt=multimodal_prompt, 
@@ -661,23 +664,27 @@ Analyze the provided gridded screenshot and output your next action.
                             current_context=e2b_system_prompt 
                         )
                         ai_response_text = response_payload.get("action", "").strip() if isinstance(response_payload, dict) else str(response_payload).strip()
+                        add_message("assistant", f"Debug: AI response received: '{ai_response_text}'", "info")
 
                         if not ai_response_text:
                             add_message("assistant", "E2B Automation: AI did not return an action.", "error")
                             st.session_state.e2b_automation_active = False 
                         else:
-                            add_message("assistant", f"E2B AI Action: {ai_response_text}", "info")
+                            add_message("assistant", f"E2B AI Action: {ai_response_text}", "info") # This one was already there
                             st.session_state.e2b_last_action = ai_response_text
 
                             action_executed = False
                             if ai_response_text.upper().startswith("CLICK("):
                                 target = ai_response_text[len("CLICK("):-1]
+                                add_message("assistant", f"Debug: Attempting to execute parsed action: CLICK on {target}", "info")
                                 action_executed = execute_e2b_click(target, screen_width=1024, screen_height=768, rows=st.session_state.e2b_grid_rows, cols=st.session_state.e2b_grid_cols)
                             elif ai_response_text.upper().startswith("TYPE("):
                                 text_to_type = ai_response_text[len("TYPE("):-1]
+                                add_message("assistant", f"Debug: Attempting to execute parsed action: TYPE '{text_to_type}'", "info")
                                 action_executed = execute_e2b_type(text_to_type)
                             elif ai_response_text.upper().startswith("SCROLL("):
                                 direction = ai_response_text[len("SCROLL("):-1].lower()
+                                add_message("assistant", f"Debug: Attempting to execute parsed action: SCROLL {direction}", "info")
                                 add_message("assistant", f"E2B: SCROLL({direction}) requested (not yet implemented).", "action")
                                 action_executed = True 
                             elif ai_response_text.upper().startswith("COMPLETE("):
