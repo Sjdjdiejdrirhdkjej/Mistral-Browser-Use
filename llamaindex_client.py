@@ -8,10 +8,12 @@ import uuid # For temporary file names
 from llama_index.core import Settings
 from llama_index.llms.ollama import Ollama
 from llama_index.multi_modal_llms.ollama import OllamaMultiModal
-from llama_index.core.llms import CompletionResponse
-from llama_index.core.multi_modal_llms import MultiModalCompletionResponse
+from llama_index.core.llms import CompletionResponse # Corrected: MultiModalCompletionResponse is not standard for .complete() text output
+# from llama_index.core.multi_modal_llms import MultiModalCompletionResponse # This was likely the source of error
 # from llama_index.core.base.response.schema import ResponseType # Not directly used for now
 from llama_index.core.schema import ImageDocument
+# Import ChatMessage if using .chat() method and need to type hint its response
+from llama_index.core.base.llms.types import ChatMessage
 
 # Default Ollama base URL
 OLLAMA_BASE_URL = "http://localhost:11434"
@@ -247,14 +249,16 @@ Example:
 
             # Using multi_modal_llm.chat for potentially better structured output with system/user roles
             # self.multi_modal_llm is already configured with format="json"
-            response = self.multi_modal_llm.chat(
+            # The response from .chat() is typically a ChatResponse object,
+            # and its message content is accessed via response.message.content
+            chat_response = self.multi_modal_llm.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": text_prompt, "image_documents": [image_doc]} # LlamaIndex standard for OllamaMultiModal chat
                 ]
             )
 
-            response_text = response.message.content.strip()
+            response_text = chat_response.message.content.strip()
             parsed_output = self._parse_json_from_response(response_text, "analyze_and_decide")
 
             if "error_parsing" in parsed_output: # Check if parsing helper returned an error structure
@@ -301,13 +305,14 @@ Example:
             image_doc = ImageDocument(image=image_base64)
 
             # self.multi_modal_llm is already configured with format="json"
-            response = self.multi_modal_llm.chat(
+            # The response from .chat() is typically a ChatResponse object
+            chat_response = self.multi_modal_llm.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": text_prompt, "image_documents": [image_doc]}
                 ]
             )
-            response_text = response.message.content.strip()
+            response_text = chat_response.message.content.strip()
             parsed_output = self._parse_json_from_response(response_text, "analyze_state_vision")
 
             if "error_parsing" in parsed_output: # Check if parsing helper returned an error structure
