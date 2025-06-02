@@ -25,8 +25,8 @@ def take_e2b_screenshot_and_display():
     or None if initial capture fails.
     """
     if not st.session_state.get('e2b_session'):
-        add_message("assistant", "E2B session not available to take screenshot.", "error")
-        add_message("assistant", "Debug (take_e2b_screenshot): Session not active, returning None.", "info")
+        # add_message("assistant", "E2B session not available to take screenshot.", "error") # Removed
+        # add_message("assistant", "Debug (take_e2b_screenshot): Session not active, returning None.", "info") # Removed
         return None
 
     try:
@@ -58,21 +58,21 @@ def take_e2b_screenshot_and_display():
         )
 
         if gridded_image_path_or_none:
-            add_message("assistant", gridded_image_path_or_none, msg_type="image", caption="Gridded E2B Desktop Screenshot (10x10)")
-            add_message("assistant", f"Debug (take_e2b_screenshot): Gridding successful, returning gridded path: {gridded_image_path_or_none}", "info")
+            # add_message("assistant", gridded_image_path_or_none, msg_type="image", caption="Gridded E2B Desktop Screenshot (10x10)") # Removed
+            # add_message("assistant", f"Debug (take_e2b_screenshot): Gridding successful, returning gridded path: {gridded_image_path_or_none}", "info") # Removed
             return gridded_image_path_or_none
         else:
-            add_message("assistant", "Failed to create gridded screenshot. Displaying original.", "warning")
-            add_message("assistant", screenshot_filepath, msg_type="image", caption="E2B Desktop Screenshot (Original - Gridding Failed)")
-            add_message("assistant", f"Debug (take_e2b_screenshot): Gridding failed, returning original path: {screenshot_filepath}", "info")
+            # add_message("assistant", "Failed to create gridded screenshot. Displaying original.", "warning") # Removed
+            # add_message("assistant", screenshot_filepath, msg_type="image", caption="E2B Desktop Screenshot (Original - Gridding Failed)") # Removed
+            # add_message("assistant", f"Debug (take_e2b_screenshot): Gridding failed, returning original path: {screenshot_filepath}", "info") # Removed
             return screenshot_filepath # Return original if gridding failed
 
     except Exception as e:
-        error_msg = f"Failed to take or process E2B screenshot: {str(e)}"
-        add_message("assistant", error_msg, "error")
-        add_message("assistant", "Debug (take_e2b_screenshot): Exception during capture/processing, returning None.", "info")
-        # Optionally print traceback for server-side logs
-        # print(f"E2B Screenshot Error: {traceback.format_exc()}") 
+        # error_msg = f"Failed to take or process E2B screenshot: {str(e)}" # Original error message
+        # add_message("assistant", error_msg, "error") # Removed
+        # add_message("assistant", "Debug (take_e2b_screenshot): Exception during capture/processing, returning None.", "info") # Removed
+        print(f"Error in take_e2b_screenshot_and_display: {str(e)}") # Keep server-side log
+        print(traceback.format_exc()) # Keep server-side log for more details
         return None
 
 def execute_e2b_click(target, screen_width=1024, screen_height=768, rows=10, cols=10):
