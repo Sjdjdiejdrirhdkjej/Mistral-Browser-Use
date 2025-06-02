@@ -395,5 +395,3 @@ if __name__ == '__main__':
         print(f"Could not run LlamaIndexClient tests: {e}")
     except Exception as e:
         print(f"An unexpected error occurred during LlamaIndexClient main test: {e}")
-
-```
