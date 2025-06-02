@@ -2,5 +2,4 @@ selenium
 opencv-python
 geckodriver
 webdriver-manager
-e2b_desktop
-Pillow
+e2b

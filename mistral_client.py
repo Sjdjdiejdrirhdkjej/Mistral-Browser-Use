@@ -11,15 +11,11 @@ class MistralClient:
         if not self.api_key:
             raise ValueError("Mistral API key is required")
     
-    def analyze_and_decide(self, image_base64, user_objective, model_name: str, current_context=None, system_prompt_override: str | None = None):
+    def analyze_and_decide(self, image_base64, user_objective, model_name: str, current_context=None):
         """Analyze screenshot and decide on next action"""
-        if not image_base64:
-            error_msg = "image_base64 provided to analyze_and_decide is empty or None."
-            print(error_msg) # Log to console/server logs
-            raise ValueError(error_msg) # Raise an exception to stop further processing
         
         # Construct the prompt for analysis
-        default_system_prompt = """You are an expert web automation assistant. Your task is to analyze the provided screenshot of a webpage and the current user objective, then decide the single next best action to take.
+        system_prompt = """You are an expert web automation assistant. Your task is to analyze the provided screenshot of a webpage and the current user objective, then decide the single next best action to take.
 
 AVAILABLE ACTIONS:
 - click(INDEX): Click on an element identified by its red numerical label (INDEX) in the screenshot.
@@ -61,7 +57,7 @@ Analyze the provided screenshot and determine the single next action to take. Us
                 "messages": [
                     {
                         "role": "system",
-                        "content": system_prompt_override if system_prompt_override else default_system_prompt
+                        "content": system_prompt
                     },
                     {
                         "role": "user",
@@ -104,15 +100,29 @@ Analyze the provided screenshot and determine the single next action to take. Us
             # Try to parse as JSON
             try:
                 parsed_response = json.loads(content)
-                # Check for required keys AFTER successful parsing
-                if not ('thinking' in parsed_response and 'action' in parsed_response):
-                    error_message = f"AI response content is valid JSON but missing required 'thinking' or 'action' keys. Parsed content: {parsed_response}"
-                    print(error_message) # Log the error and content
-                    raise Exception(error_message) # Raise an exception
-                return parsed_response # Return if all good
-            except json.JSONDecodeError: # Handles malformed JSON
-                print(f"JSONDecodeError in analyze_and_decide: Failed to parse content. Content: {content}")
-                raise Exception(f"Failed to parse AI response as JSON. Content: {content}")
+                if 'thinking' in parsed_response and 'action' in parsed_response:
+                    return parsed_response
+            except json.JSONDecodeError:
+                pass
+
+            # If JSON parsing fails (it shouldn't with response_format set, but as a fallback)
+            # or if the response is not a JSON string, this will be caught by the outer try-except.
+            # The goal is to always return the expected dictionary structure if possible.
+            except json.JSONDecodeError as e:
+                # Log the content for debugging if parsing fails
+                print(f"JSONDecodeError in analyze_and_decide: {e}. Content: {content}")
+                # Fallback to manual extraction if absolutely necessary (should be rare)
+                lines = content.split('\n')
+                thinking = "Failed to parse JSON, fallback attempt: " + content
+                action_str = "click(1)" # Default action on severe parsing failure
+
+                for line_content in lines:
+                    if 'thinking' in line_content.lower() and ':' in line_content:
+                        thinking = line_content.split(':', 1)[1].strip().strip('"')
+                    elif 'action' in line_content.lower() and ':' in line_content:
+                        action_str = line_content.split(':', 1)[1].strip().strip('"')
+
+                return {"thinking": thinking, "action": action_str}
 
         except requests.exceptions.Timeout:
             # Specific exception for timeouts
@@ -156,7 +166,7 @@ Analyze the provided screenshot and determine the single next action to take. Us
         except Exception:
             return False
 
-    def generate_steps_for_todo(self, user_prompt: str, model_name: str, system_prompt_override: str | None = None) -> list[str]:
+    def generate_steps_for_todo(self, user_prompt: str, model_name: str) -> list[str]:
         """
         Generates a list of actionable steps for web automation based on a user prompt.
 
@@ -167,7 +177,7 @@ Analyze the provided screenshot and determine the single next action to take. Us
         Returns:
             A list of strings, where each string is a step. Returns an empty list if parsing fails.
         """
-        default_system_prompt = """You are an expert planning agent. Your primary function is to break down a user's high-level web automation objective into a detailed, ordered list of specific sub-tasks. These sub-tasks will be executed by an automation tool.
+        system_prompt = """You are an expert planning agent. Your primary function is to break down a user's high-level web automation objective into a detailed, ordered list of specific sub-tasks. These sub-tasks will be executed by an automation tool.
 
 GUIDELINES:
 1.  Analyze the user's objective carefully.
@@ -199,7 +209,7 @@ Example for objective "Log into the website example.com and go to the dashboard"
             payload = {
                 "model": model_name,
                 "messages": [
-                    {"role": "system", "content": system_prompt_override if system_prompt_override else default_system_prompt},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
                 "temperature": 0.2, # Lower temperature for more deterministic, list-like output
