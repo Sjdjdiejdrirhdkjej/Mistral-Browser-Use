@@ -602,6 +602,110 @@ def main():
         st.components.v1.iframe(st.session_state.e2b_url, height=600)
     # The sidebar status messages are now handled in setup_sidebar()
 
+    # E2B Automation Loop
+    if st.session_state.get('e2b_automation_active'):
+        if not st.session_state.get('e2b_desktop_enabled') or not st.session_state.get('e2b_session'):
+            add_message("assistant", "E2B Desktop is no longer active. Stopping E2B automation.", "error")
+            st.session_state.e2b_automation_active = False
+            st.rerun()
+            # return # Exit if E2B session was lost - st.rerun() handles the exit from this path.
+
+        else: # E2B Automation step
+            add_message("assistant", "E2B Automation: Taking screenshot...", "info")
+            # Ensure grid dimensions from session state are used if we want them to be configurable later.
+            # For now, gridify_image uses its own defaults (10x10) if not specified.
+            # The take_e2b_screenshot_and_display function internally calls gridify_image.
+            gridded_screenshot_path = take_e2b_screenshot_and_display() 
+
+            if not gridded_screenshot_path:
+                add_message("assistant", "E2B Automation: Failed to get screenshot. Cannot proceed.", "error")
+                st.session_state.e2b_automation_active = False
+                st.rerun()
+                # return
+            else:
+                e2b_system_prompt = """
+You are an expert AI assistant tasked with automating a remote desktop environment based on user objectives. You will be provided with a user's objective and a gridded screenshot of the current desktop state. The screenshot is overlaid with a 10x10 grid (labeled A1-A10, B1-B10, ..., J1-J10 where letters are rows A-J and numbers are columns 1-10). Your goal is to determine the single next best action to perform on the desktop to achieve the objective.
+
+Based on the visual information from the gridded screenshot and the overall objective, you must output ONE of the following actions in the specified format:
+1. CLICK(CELL_LABEL) - e.g., CLICK(D5)
+2. TYPE(TEXT_TO_TYPE) - e.g., TYPE(Hello, world!)
+3. SCROLL(DIRECTION) - DIRECTION must be UP, DOWN, LEFT, or RIGHT. e.g., SCROLL(DOWN)
+4. COMPLETE(SUMMARY_OF_COMPLETION) - e.g., COMPLETE(Objective achieved.)
+5. ERROR(REASON_FOR_ERROR) - e.g., ERROR(Cannot find button.)
+
+Current Objective: {objective}
+Previous Action (if any): {previous_action}
+Analyze the provided gridded screenshot and output your next action.
+""".format(objective=st.session_state.current_objective, previous_action=st.session_state.e2b_last_action or "None")
+
+                add_message("assistant", "E2B Automation: Thinking...", "info")
+                
+                try:
+                    image_data_for_ai = None
+                    with open(gridded_screenshot_path, 'rb') as img_file:
+                        image_data_for_ai = base64.b64encode(img_file.read()).decode('utf-8')
+                    
+                    if not st.session_state.mistral_client:
+                        add_message("assistant", "Mistral client not available for E2B automation.", "error")
+                        st.session_state.e2b_automation_active = False
+                        st.rerun()
+                        # return 
+                    
+                    else: # Mistral client is available
+                        multimodal_prompt = f"Objective: {st.session_state.current_objective}\nPrevious Action: {st.session_state.e2b_last_action or 'None'}\nAnalyze the screenshot and follow system instructions."
+                        
+                        response_payload = st.session_state.mistral_client.analyze_and_decide(
+                            image_b64=image_data_for_ai,
+                            user_prompt=multimodal_prompt, 
+                            model_name="pixtral-large-latest", 
+                            current_context=e2b_system_prompt 
+                        )
+                        ai_response_text = response_payload.get("action", "").strip() if isinstance(response_payload, dict) else str(response_payload).strip()
+
+                        if not ai_response_text:
+                            add_message("assistant", "E2B Automation: AI did not return an action.", "error")
+                            st.session_state.e2b_automation_active = False 
+                        else:
+                            add_message("assistant", f"E2B AI Action: {ai_response_text}", "info")
+                            st.session_state.e2b_last_action = ai_response_text
+
+                            action_executed = False
+                            if ai_response_text.upper().startswith("CLICK("):
+                                target = ai_response_text[len("CLICK("):-1]
+                                action_executed = execute_e2b_click(target, screen_width=1024, screen_height=768, rows=st.session_state.e2b_grid_rows, cols=st.session_state.e2b_grid_cols)
+                            elif ai_response_text.upper().startswith("TYPE("):
+                                text_to_type = ai_response_text[len("TYPE("):-1]
+                                action_executed = execute_e2b_type(text_to_type)
+                            elif ai_response_text.upper().startswith("SCROLL("):
+                                direction = ai_response_text[len("SCROLL("):-1].lower()
+                                add_message("assistant", f"E2B: SCROLL({direction}) requested (not yet implemented).", "action")
+                                action_executed = True 
+                            elif ai_response_text.upper().startswith("COMPLETE("):
+                                summary = ai_response_text[len("COMPLETE("):-1]
+                                add_message("assistant", f"E2B Automation: Objective COMPLETE: {summary}", "success")
+                                st.session_state.e2b_automation_active = False
+                                action_executed = True
+                            elif ai_response_text.upper().startswith("ERROR("):
+                                error_reason = ai_response_text[len("ERROR("):-1]
+                                add_message("assistant", f"E2B Automation: AI reported an ERROR: {error_reason}", "error")
+                                st.session_state.e2b_automation_active = False
+                                action_executed = True 
+                            else:
+                                add_message("assistant", f"E2B Automation: Unknown AI action: {ai_response_text}", "error")
+                                st.session_state.e2b_automation_active = False
+
+                            if not action_executed and st.session_state.e2b_automation_active: 
+                                 add_message("assistant", "E2B Automation: Action failed to execute. Stopping.", "error")
+                                 st.session_state.e2b_automation_active = False
+
+                except Exception as e:
+                    add_message("assistant", f"E2B Automation: Error during AI interaction or action execution: {str(e)}", "error")
+                    # print(traceback.format_exc()) 
+                    st.session_state.e2b_automation_active = False
+
+                if st.session_state.e2b_automation_active: 
+                    time.sleep(1) 
+                st.rerun() # Rerun to continue loop or reflect ended state.
 
     # Main chat interface
     st.write("Enter your automation objective and I'll help you navigate the web!")
