@@ -3,3 +3,7 @@ opencv-python
 geckodriver
 webdriver-manager
 ollama
+llama-index
+llama-index-llms-ollama
+llama-index-embeddings-ollama
+llama-index-multi-modal-llms-ollama

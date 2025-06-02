@@ -5,8 +5,9 @@ import time
 import base64
 from datetime import datetime
 from browser_automation import BrowserAutomation
-from mistral_client import MistralClient
-from ollama_client import OllamaClient # Added import
+# from mistral_client import MistralClient # Removed
+# from ollama_client import OllamaClient # Removed
+from llamaindex_client import LlamaIndexClient # Added
 from element_detector import ElementDetector
 import todo_manager # Added import
 import traceback
@@ -109,12 +110,14 @@ def initialize_session_state():
     # but not necessarily tied to the 'messages' key as a new session indicator.
     if 'browser' not in st.session_state:
         st.session_state.browser = None
-    if 'mistral_client' not in st.session_state:
-        st.session_state.mistral_client = None
-    if 'ollama_client' not in st.session_state: # Added for Ollama
-        st.session_state.ollama_client = None
-    if 'ai_provider' not in st.session_state: # Added for AI provider selection
-        st.session_state.ai_provider = "Mistral" # Default to Mistral
+    # if 'mistral_client' not in st.session_state: # Removed
+    #     st.session_state.mistral_client = None # Removed
+    # if 'ollama_client' not in st.session_state: # Removed (old client)
+    #     st.session_state.ollama_client = None # Removed
+    if 'llamaindex_client' not in st.session_state: # Added for LlamaIndexClient
+        st.session_state.llamaindex_client = None
+    # if 'ai_provider' not in st.session_state: # Removed AI provider selection
+    #     st.session_state.ai_provider = "Mistral" # Default to Mistral # Removed
     if 'element_detector' not in st.session_state:
         st.session_state.element_detector = ElementDetector()
     if 'automation_active' not in st.session_state:
@@ -144,76 +147,67 @@ def setup_sidebar():
     """Setup sidebar for API key configuration and controls"""
     st.sidebar.title("🔧 Configuration")
 
-    # AI Provider Selection
-    st.sidebar.subheader("AI Provider")
-    ai_provider_choice = st.sidebar.selectbox(
-        "Choose AI Provider",
-        ("Mistral", "Ollama"),
-        index=["Mistral", "Ollama"].index(st.session_state.ai_provider)
+    # LlamaIndexClient Initialization (replaces AI Provider Selection)
+    st.sidebar.subheader("LlamaIndex & Ollama Setup")
+    ollama_base_url_sidebar = st.sidebar.text_input(
+        "Ollama Base URL",
+        value=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+        help="URL of your running Ollama instance."
     )
-    st.session_state.ai_provider = ai_provider_choice
 
-    if st.session_state.ai_provider == "Mistral":
-        st.sidebar.subheader("Mistral AI API Key")
-        api_key = st.sidebar.text_input(
-            "API Key",
-            value=os.getenv("MISTRAL_API_KEY", ""),
-            type="password",
-            help="Enter your Mistral AI API key"
-        )
-        if api_key:
-            if st.session_state.mistral_client is None or st.session_state.mistral_client.api_key != api_key:
-                st.session_state.mistral_client = MistralClient(api_key)
-                st.sidebar.success("✅ Mistral API Key configured")
-                st.session_state.ollama_client = None # Clear other client
-        else:
-            st.sidebar.warning("⚠️ Please enter your Mistral AI API key")
-            st.session_state.mistral_client = None
-    
-    elif st.session_state.ai_provider == "Ollama":
-        st.sidebar.subheader("Ollama Configuration")
-        ollama_host = st.sidebar.text_input(
-            "Ollama Host URL",
-            value=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
-            help="Enter the URL of your Ollama instance (e.g., http://localhost:11434)"
-        )
-        if ollama_host:
-            if st.session_state.ollama_client is None or st.session_state.ollama_client.client._client.host != ollama_host:
-                st.session_state.ollama_client = OllamaClient(host=ollama_host)
-                st.session_state.mistral_client = None # Clear other client
+    # Attempt to initialize LlamaIndexClient if not already done or if URL changed
+    # For simplicity, we re-initialize if URL changes. More complex state management could preserve it.
+    if 'llamaindex_client' not in st.session_state or \
+       st.session_state.llamaindex_client is None or \
+       (st.session_state.llamaindex_client and st.session_state.llamaindex_client.ollama_base_url != ollama_base_url_sidebar):
+        try:
+            # Defaulting to qwen2.5vl as per LlamaIndexClient's vision model default
+            # and llama3.2 as the text model default.
+            st.session_state.llamaindex_client = LlamaIndexClient(ollama_base_url=ollama_base_url_sidebar)
+            st.sidebar.success(f"✅ LlamaIndexClient initialized for models '{st.session_state.llamaindex_client.vision_model_name}' (vision) and '{st.session_state.llamaindex_client.text_model_name}' (text).")
+        except Exception as e:
+            st.sidebar.error(f"❌ Failed to initialize LlamaIndexClient: {e}")
+            st.session_state.llamaindex_client = None # Ensure it's None on failure
 
-            # Check Ollama service reachability and model availability
-            target_ollama_model = "llama3.2" # Define the target model
-            if st.session_state.ollama_client:
-                try:
-                    # Try to list models to confirm connection
-                    st.session_state.ollama_client.list_models()
-                    st.sidebar.success(f"✅ Connected to Ollama at {ollama_host}")
-
-                    # Check for specific model
-                    if st.session_state.ollama_client.is_model_available(target_ollama_model):
-                        st.sidebar.success(f"✅ Model '{target_ollama_model}' is available locally.")
+    # Ollama Service and Model Checks (using LlamaIndexClient methods)
+    if st.session_state.llamaindex_client:
+        # Vision Model (qwen2.5vl)
+        target_vision_model = st.session_state.llamaindex_client.vision_model_name # Should be "qwen2.5vl"
+        try:
+            if st.session_state.llamaindex_client.is_model_available(target_vision_model):
+                st.sidebar.success(f"✅ Vision Model '{target_vision_model}' is available.")
+            else:
+                st.sidebar.warning(f"⚠️ Vision Model '{target_vision_model}' not found locally.")
+                if st.sidebar.button(f"📥 Download '{target_vision_model}' Model"):
+                    with st.spinner(f"Pulling '{target_vision_model}'... This may take a while. See console for progress."):
+                        success, message = st.session_state.llamaindex_client.pull_model(target_vision_model)
+                    if success:
+                        st.sidebar.success(message)
+                        st.rerun()
                     else:
-                        st.sidebar.warning(f"⚠️ Model '{target_ollama_model}' not found locally.")
-                        if st.sidebar.button(f"📥 Download '{target_ollama_model}' Model"):
-                            with st.spinner(f"Pulling '{target_ollama_model}'... This may take a while. See console for progress."):
-                                success, message = st.session_state.ollama_client.pull_model(target_ollama_model)
-                            if success:
-                                st.sidebar.success(message)
-                                # Rerun to update model status display
-                                st.rerun()
-                            else:
-                                st.sidebar.error(message)
-                except requests.exceptions.ConnectionError: # More specific error for connection
-                    st.sidebar.error(f"❌ Failed to connect to Ollama at {ollama_host}. Ensure `ollama serve` is running.")
-                    st.session_state.ollama_client = None
-                except Exception as e: # Catch other potential errors from client methods
-                    st.sidebar.error(f"❌ Error interacting with Ollama: {e}")
-                    st.session_state.ollama_client = None
-            # This else corresponds to `if ollama_host:`
-        else:
-            st.sidebar.warning("⚠️ Please enter the Ollama host URL.")
-            st.session_state.ollama_client = None
+                        st.sidebar.error(message)
+
+            # Text Model (e.g., llama3.2), if different from vision model
+            target_text_model = st.session_state.llamaindex_client.text_model_name
+            if target_text_model != target_vision_model:
+                if st.session_state.llamaindex_client.is_model_available(target_text_model):
+                    st.sidebar.success(f"✅ Text Model '{target_text_model}' is available.")
+                else:
+                    st.sidebar.warning(f"⚠️ Text Model '{target_text_model}' not found locally.")
+                    if st.sidebar.button(f"📥 Download '{target_text_model}' Model"):
+                        with st.spinner(f"Pulling '{target_text_model}'... This may take a while. See console for progress."):
+                            success, message = st.session_state.llamaindex_client.pull_model(target_text_model)
+                        if success:
+                            st.sidebar.success(message)
+                            st.rerun()
+                        else:
+                            st.sidebar.error(message)
+        except Exception as e: # Broad exception for issues like ollama service not running during model checks
+            st.sidebar.error(f"❌ Error checking/pulling Ollama models: {e}. Ensure Ollama is running at {ollama_base_url_sidebar}.")
+            # We don't set llamaindex_client to None here, as it might have initialized but model listing failed.
+            # The orchestrator logic will handle cases where client is present but models are not usable.
+    else:
+        st.sidebar.warning("LlamaIndexClient not initialized. Please ensure Ollama URL is correct and service is running.")
 
     st.sidebar.divider()
     # Browser Controls
@@ -244,39 +238,36 @@ def setup_sidebar():
     browser_status = "🟢 Running" if st.session_state.browser and st.session_state.automation_active else "🔴 Stopped"
     st.sidebar.write(f"🌐 Browser: {browser_status}")
 
-    st.sidebar.subheader("AI Provider Status")
-    if st.session_state.ai_provider == "Mistral":
-        if st.session_state.mistral_client:
-            st.sidebar.write("🤖 Mistral AI: ✅ Connected")
+    st.sidebar.subheader("LlamaIndex/Ollama Status")
+    if st.session_state.get('llamaindex_client'):
+        client = st.session_state.llamaindex_client
+        # Basic check: can we list models? (Indicates Ollama service is likely running)
+        # This is a simplified check. A dedicated health check endpoint in Ollama would be better.
+        ollama_running = False
+        try:
+            # Use a quick check, like listing models, but don't display the full list here.
+            # The is_model_available internally calls list, so we rely on its error handling.
+            # For a direct check if ollama is running, a more lightweight ping would be ideal if available.
+            # For now, if client exists, we assume it tried to connect. Model checks below give more detail.
+            # A more direct check:
+            test_list = client.is_model_available(client.vision_model_name) # This will try 'ollama list'
+            ollama_running = True # If is_model_available didn't throw connection error, assume running
+        except Exception: # Broadly catch if is_model_available fails due to connection
+            ollama_running = False
+
+        if ollama_running:
+            st.sidebar.write(f"🤖 Ollama Service: ✅ Detected at {client.ollama_base_url}")
+            vision_model_status = f"✅ Vision Model ({client.vision_model_name}): Available" if client.is_model_available(client.vision_model_name) else f"⚠️ Vision Model ({client.vision_model_name}): Not Found"
+            text_model_status = f"✅ Text Model ({client.text_model_name}): Available" if client.is_model_available(client.text_model_name) else f"⚠️ Text Model ({client.text_model_name}): Not Found"
+            st.sidebar.write(vision_model_status)
+            if client.text_model_name != client.vision_model_name:
+                st.sidebar.write(text_model_status)
+            if "Not Found" in vision_model_status or ("Not Found" in text_model_status and client.text_model_name != client.vision_model_name):
+                st.sidebar.caption("Use Ollama Configuration above to download missing models.")
         else:
-            st.sidebar.write("🤖 Mistral AI: 🔴 Not Configured")
-    elif st.session_state.ai_provider == "Ollama":
-        if st.session_state.ollama_client:
-            # Check specific model availability for a more detailed status
-            target_model = "llama3.2" # Primary text model
-            vision_model = "llava" # Primary vision model
-
-            text_model_available = st.session_state.ollama_client.is_model_available(target_model)
-            vision_model_available = st.session_state.ollama_client.is_model_available(vision_model)
-
-            status_messages = []
-            if text_model_available:
-                status_messages.append(f"✅ {target_model} ready")
-            else:
-                status_messages.append(f"⚠️ {target_model} not found")
-
-            if vision_model_available:
-                status_messages.append(f"✅ {vision_model} ready")
-            else:
-                status_messages.append(f"⚠️ {vision_model} not found (for image analysis)")
-
-            combined_status = ", ".join(status_messages)
-            st.sidebar.write(f"🤖 Ollama: {combined_status}")
-            if not text_model_available or not vision_model_available:
-                 st.sidebar.caption("Use Ollama configuration above to download missing models.")
-
-        else:
-            st.sidebar.write("🤖 Ollama: 🔴 Service Not Connected/Configured")
+            st.sidebar.write(f"🤖 Ollama Service: 🔴 Not Detected at {client.ollama_base_url}. Ensure 'ollama serve' is running.")
+    else:
+        st.sidebar.write("🤖 LlamaIndex/Ollama: 🔴 Client Not Initialized")
 
     # Debug Log Expander and Screenshot Count Display REMOVED from sidebar
 
@@ -460,17 +451,13 @@ def main():
     # log_debug_message itself ensures 'debug_log_messages' is initialized in session_state.
     # log_debug_message(f"DEBUG_STATE: In main(), AFTER st.set_page_config(), 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
     
-    # Dynamic Title based on AI Provider
-    app_title = "Web Automation Assistant"
-    if st.session_state.get('ai_provider') == "Mistral":
-        st.title(f"{app_title} (Mistral Edition)")
-        st.subheader("Powered by Mistral AI & Computer Vision")
-    elif st.session_state.get('ai_provider') == "Ollama":
-        st.title(f"{app_title} (Ollama Edition)")
-        st.subheader("Powered by Ollama (llama3.2 & LLaVA) & Computer Vision")
+    st.title("Web Automation Assistant")
+    # Subheader will be more generic now, or dynamically update if we know client model
+    if st.session_state.get('llamaindex_client'):
+        client = st.session_state.llamaindex_client
+        st.subheader(f"Powered by LlamaIndex & Ollama ({client.vision_model_name} / {client.text_model_name})")
     else:
-        st.title(app_title) # Default title
-        st.subheader("AI-Powered Web Automation")
+        st.subheader("Powered by LlamaIndex & Ollama (Client not initialized)")
 
     initialize_session_state() # Initializes 'messages' and other states.
     setup_sidebar()
@@ -487,20 +474,27 @@ def main():
     if user_input:
         add_message("user", user_input)
 
-        # Check prerequisites
-        active_client = None
-        client_name = ""
-        if st.session_state.ai_provider == "Mistral":
-            active_client = st.session_state.mistral_client
-            client_name = "Mistral AI"
-        elif st.session_state.ai_provider == "Ollama":
-            active_client = st.session_state.ollama_client
-            client_name = "Ollama"
-
-        if not active_client:
-            add_message("assistant", f"Please configure your {client_name} settings in the sidebar first.", "error")
+        # Check prerequisites (LlamaIndexClient and Browser)
+        if not st.session_state.get('llamaindex_client'):
+            add_message("assistant", "LlamaIndexClient not initialized. Please check Ollama setup in the sidebar.", "error")
             st.rerun()
             return
+
+        # Further check: ensure the necessary models are available via the client
+        # This is crucial before starting any AI-dependent workflow.
+        client = st.session_state.llamaindex_client
+        vision_model_ok = client.is_model_available(client.vision_model_name)
+        text_model_ok = client.is_model_available(client.text_model_name)
+
+        if not vision_model_ok:
+            add_message("assistant", f"Vision model '{client.vision_model_name}' is not available in Ollama. Please download it using the sidebar.", "error")
+            st.rerun()
+            return
+        if not text_model_ok: # If text model is different and also not available
+             add_message("assistant", f"Text model '{client.text_model_name}' is not available in Ollama. Please download it using the sidebar.", "error")
+             st.rerun()
+             return
+
 
         if not st.session_state.browser:
             add_message("assistant", "Please start the browser first using the sidebar controls.", "error")
@@ -543,51 +537,18 @@ def main():
         add_message("assistant", f"📝 `todo.md` reset for objective: {current_objective_for_planning}", "info")
 
         try:
-            active_client = None
-            client_name = ""
-            planning_model = "" # Define a variable for the model used in planning
+            # Now using LlamaIndexClient directly
+            llamaindex_client = st.session_state.llamaindex_client
+            client_name = f"LlamaIndex (Ollama - {llamaindex_client.text_model_name})" # For display
 
-            if st.session_state.ai_provider == "Mistral":
-                active_client = st.session_state.mistral_client
-                client_name = "Mistral AI"
-                planning_model = "pixtral-large-latest" # Mistral's model for planning
-                if not active_client:
-                    add_message("assistant", "Mistral client not initialized. Cannot generate steps.", "error")
-                    st.rerun()
-                    return
-            elif st.session_state.ai_provider == "Ollama":
-                active_client = st.session_state.ollama_client
-                client_name = "Ollama"
-                planning_model = "llama3.2" # Ollama's model for planning (ensure it's suitable)
-                if not active_client:
-                    add_message("assistant", "Ollama client not initialized or not reachable. Cannot generate steps.", "error")
-                    st.rerun()
-                    return
+            add_message("assistant", f"🧠 Generating steps with {client_name}...", "info")
 
-            add_message("assistant", f"🧠 Generating steps with {client_name} ({planning_model})...", "info")
-
-            # Dispatch to the correct client's method
-            if st.session_state.ai_provider == "Mistral":
-                generated_steps = active_client.generate_steps_for_todo(
-                    user_prompt=current_objective_for_planning,
-                    model_name=planning_model
+            try:
+                generated_steps = llamaindex_client.generate_steps_for_todo(
+                    objective=current_objective_for_planning
                 )
-            elif st.session_state.ai_provider == "Ollama":
-                # OllamaClient's generate_steps_for_todo might have different params or needs specific prompt engineering
-                # For now, assuming it takes user_prompt and model_name like Mistral's for consistency
-                # This might raise NotImplementedError if not fully implemented in ollama_client.py
-                try:
-                    generated_steps = active_client.generate_steps_for_todo(
-                        task_description=current_objective_for_planning # Assuming this matches OllamaClient's method
-                        # model_name=planning_model # model_name is often implicit in Ollama or part of the prompt
-                    )
-                except NotImplementedError:
-                    add_message("assistant", f"Step generation is not yet implemented for Ollama. Cannot proceed with planning.", "error")
-                    st.session_state.orchestrator_active = False
-                    st.rerun()
-                    return
-                except Exception as e: # Catch other errors from Ollama client
-                    add_message("assistant", f"Error generating steps with Ollama: {e}", "error")
+            except Exception as e:
+                add_message("assistant", f"Error generating steps with {client_name}: {e}", "error")
                     st.session_state.orchestrator_active = False
                     st.rerun()
                     return
@@ -611,7 +572,7 @@ def main():
             st.session_state.todo_tasks = retrieved_todo.get("tasks", [])
             st.session_state.current_task_index = 0
 
-            plan_display_intro = "**Planning Agent (Pixtral-Large-Latest) says:** Planning complete. Here's the initial plan:"
+            plan_display_intro = f"**Planning Agent ({client_name}) says:** Planning complete. Here's the initial plan:"
             plan_display = f"{plan_display_intro}\n\n**Objective:** {st.session_state.todo_objective}\n\n"
             plan_display += "**Tasks:**\n"
             if st.session_state.todo_tasks:
@@ -633,31 +594,19 @@ def main():
 
     # Orchestrator Main Execution Loop
     if st.session_state.get('orchestrator_active') and st.session_state.todo_tasks:
-        active_client = None
-        client_name = ""
-        action_decision_model = ""
-        vision_model = ""
+        # All AI calls will now use LlamaIndexClient
+        llamaindex_client = st.session_state.get('llamaindex_client')
 
-        if st.session_state.ai_provider == "Mistral":
-            active_client = st.session_state.mistral_client
-            client_name = "Mistral AI"
-            action_decision_model = "pixtral-large-2411"
-            vision_model = "pixtral-12b-2409"
-        elif st.session_state.ai_provider == "Ollama":
-            active_client = st.session_state.ollama_client
-            client_name = "Ollama"
-            # These models need to be set based on what's available and suitable in Ollama
-            action_decision_model = "llava" # LLaVA for combined image + text reasoning for action
-            vision_model = "llava"          # LLaVA for vision-based state analysis
-            # If a non-vision model were used for action_decision (e.g. pure llama3.2),
-            # it wouldn't be able to use the image directly in its prompt for analyze_and_decide.
-            # The current ollama_client.analyze_and_decide assumes a LLaVA-like model.
-
-        if not st.session_state.browser or not active_client:
-            add_message("assistant", f"Browser or {client_name} client not initialized. Orchestrator cannot proceed.", "error")
+        if not st.session_state.browser or not llamaindex_client:
+            add_message("assistant", "Browser or LlamaIndexClient not initialized. Orchestrator cannot proceed.", "error")
             st.session_state.orchestrator_active = False
             st.rerun()
             return
+
+        # Model names are now sourced from the client instance for display/logging
+        client_display_name = f"LlamaIndex (Ollama - Vision: {llamaindex_client.vision_model_name}, Text: {llamaindex_client.text_model_name})"
+        action_decision_model_display = llamaindex_client.vision_model_name # qwen2.5vl for multimodal decisions
+        vision_model_display = llamaindex_client.vision_model_name # qwen2.5vl for vision analysis
 
         task_idx = st.session_state.current_task_index
         tasks = st.session_state.todo_tasks
@@ -681,95 +630,46 @@ def main():
                 with open(annotated_image_path, 'rb') as img_file:
                     image_data = base64.b64encode(img_file.read()).decode('utf-8')
 
-                add_message("assistant", f"🤔 Using {client_name} ({action_decision_model}) for action decision...", "thinking")
+                add_message("assistant", f"🤔 Using {client_display_name} (model: {action_decision_model_display}) for action decision...", "thinking")
 
-                if st.session_state.ai_provider == "Mistral":
-                    response = active_client.analyze_and_decide(
-                        image_data, current_task, model_name=action_decision_model, current_context=st.session_state.todo_objective
+                try:
+                    response = llamaindex_client.analyze_and_decide(
+                        image_base64=image_data, # Pass base64 string
+                        user_objective=st.session_state.todo_objective,
+                        current_task_description=current_task
                     )
-                elif st.session_state.ai_provider == "Ollama":
-                    try:
-                        # Ollama's analyze_and_decide is expected to use a LLaVA model.
-                        # It takes image_path, current_task, and current_objective.
-                        response = active_client.analyze_and_decide(
-                            image_path=annotated_image_path,
-                            current_task=current_task,
-                            current_objective=st.session_state.todo_objective, # Pass the main objective
-                            model_name=action_decision_model
-                        )
-                    except NotImplementedError: # Should not happen if OllamaClient is correctly implemented
-                        add_message("assistant", f"Action decision (analyze_and_decide) is not available for {client_name}. Cannot proceed.", "error")
-                        st.session_state.orchestrator_active = False
-                        st.rerun()
-                        return
-                    except Exception as e:
-                        add_message("assistant", f"Error during action decision with Ollama: {e}", "error")
-                        st.session_state.orchestrator_active = False
-                        st.rerun()
-                        return
+                except Exception as e:
+                    add_message("assistant", f"Error during action decision with {client_display_name}: {e}", "error")
+                    st.session_state.orchestrator_active = False
+                    st.rerun()
+                    return
 
                 thinking = response.get('thinking', 'AI provided no reasoning for the action.')
                 action_str = response.get('action', '')
 
-                # Use a more generic message for thinking, or specify provider
-                thinking_prefix = f"**{client_name} ({action_decision_model}) Reasoning:**"
+                thinking_prefix = f"**AI Reasoning ({action_decision_model_display}):**" # More generic
                 add_message("assistant", f"{thinking_prefix} {thinking}", "thinking")
 
-                if not action_str or action_str.strip() == "": # Check if action_str is empty or just whitespace
+                if not action_str or action_str.strip() == "" or response.get("error"):
                     # Check if 'thinking' contains an error message that might be more informative
-                    if "error" in thinking.lower() or (response.get("thinking") and "error" in response.get("thinking").lower()):
-                         add_message("assistant", f"{client_name} indicated an error during action decision: {thinking}. Stopping.", "error")
-                    else:
-                        add_message("assistant", f"{client_name} could not determine a valid action. Thinking: {thinking}. Stopping.", "error")
-                    st.session_state.orchestrator_active = False # Stop orchestrator if no action
+                    error_detail = response.get("error", "") if isinstance(response, dict) else ""
+                    thinking_detail = thinking if thinking and thinking != "AI provided no reasoning for the action." else ""
+                    add_message("assistant", f"AI ({action_decision_model_display}) could not determine a valid action. Error: {error_detail}. Thinking: {thinking_detail}. Stopping.", "error")
+                    st.session_state.orchestrator_active = False
                     st.rerun()
                     return
 
-                # Log the raw action determined by the model
-                # log_debug_message(f"DEBUG_ORCHESTRATOR: Action determined by {client_name} ({action_decision_model}): '{action_str}'") # REMOVED
-
-                # Validate action string format before attempting execution (optional, but good practice)
-                # This is a basic check; more sophisticated validation could be added.
-                valid_actions = ['click(', 'type(', 'navigate_to(', 'press_key(', 'complete', 'done']
-                if not any(action_str.lower().startswith(va) for va in valid_actions):
-                    add_message("assistant", f"Warning: Action '{action_str}' from {client_name} might be malformed or not a recognized browser action. Attempting execution anyway.", "info")
-                    # Potentially, could decide to stop here if action is clearly invalid to prevent errors.
-                    # For now, let execute_browser_action handle it.
-
-                # Proceed with execution
                 action_executed_successfully = execute_browser_action(action_str)
-                st.session_state.execution_summary.append({"task": current_task, "action_model_used": f"{client_name} ({action_decision_model})", "action": action_str, "executed": action_executed_successfully})
+                st.session_state.execution_summary.append({"task": current_task, "action_model_used": f"{client_display_name} ({action_decision_model_display})", "action": action_str, "executed": action_executed_successfully})
                 if len(st.session_state.execution_summary) > MAX_EXECUTION_SUMMARY_ITEMS:
                     st.session_state.execution_summary = st.session_state.execution_summary[-MAX_EXECUTION_SUMMARY_ITEMS:]
 
                 if not action_executed_successfully and action_str.lower() not in ['complete', 'done']:
                      add_message("assistant", f"Action '{action_str}' failed to execute properly. Will re-evaluate state.", "error")
-                     # Re-run will happen, and the same task will be picked up. analyze_state_vision will assess new state.
-            except ollama.ResponseError as e: # Catch specific Ollama errors if not caught by client
-                add_message("assistant", f"Ollama API error during action decision: {str(e)}. Check model '{action_decision_model}'.", "error")
-                st.session_state.orchestrator_active = False
-                st.rerun()
-                return
-            except Exception as e:
-                    # Potentially increment a retry counter for the task or stop
-                    st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": "No action determined"})
-                    if len(st.session_state.execution_summary) > MAX_EXECUTION_SUMMARY_ITEMS:
-                        st.session_state.execution_summary = st.session_state.execution_summary[-MAX_EXECUTION_SUMMARY_ITEMS:]
-                    # log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator no action determined, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
-                    st.rerun() # Re-run, might try same task if index not incremented
-                    return
+                     # Re-run will happen for re-evaluation by analyze_state_vision
 
-                action_executed_successfully = execute_browser_action(action_str)
-                st.session_state.execution_summary.append({"task": current_task, "action": action_str, "executed": action_executed_successfully})
-                if len(st.session_state.execution_summary) > MAX_EXECUTION_SUMMARY_ITEMS:
-                    st.session_state.execution_summary = st.session_state.execution_summary[-MAX_EXECUTION_SUMMARY_ITEMS:]
-
-                if not action_executed_successfully and action_str.lower() not in ['complete', 'done']:
-                     add_message("assistant", f"Action '{action_str}' failed to execute properly. Will re-evaluate.", "error")
-                     # Re-run will happen, and the same task will be picked up. analyze_state_vision will assess new state.
-
-            except Exception as e:
-                add_message("assistant", f"Error during action execution phase: {str(e)}\n{traceback.format_exc()}", "error")
+            except Exception as e: # General error during action execution phase
+                add_message("assistant", f"Error during action execution phase with {client_display_name}: {str(e)}\n{traceback.format_exc()}", "error")
                 st.session_state.orchestrator_active = False
                 # log_debug_message(f"DEBUG_STATE: Just before st.rerun() at orchestrator action execution error, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
                 st.rerun()
@@ -791,43 +691,25 @@ def main():
                 with open(annotated_image_path_after_action, 'rb') as img_file:
                     image_data_after_action = base64.b64encode(img_file.read()).decode('utf-8')
 
-                add_message("assistant", f"🧐 Using {client_name} ({vision_model}) for state analysis...", "info")
+                add_message("assistant", f"🧐 Using {client_display_name} (model: {vision_model_display}) for state analysis...", "info")
 
-                if st.session_state.ai_provider == "Mistral":
-                    analysis_result = active_client.analyze_state_vision(
-                        image_data_after_action, current_task, st.session_state.todo_objective, model_name=vision_model
+                try:
+                    analysis_result = llamaindex_client.analyze_state_vision(
+                        image_base64=image_data_after_action, # Pass base64 string
+                        current_task=current_task,
+                        objective=st.session_state.todo_objective
                     )
-                elif st.session_state.ai_provider == "Ollama":
-                    try:
-                        # Ollama's analyze_state_vision is expected to use a LLaVA model.
-                        # It takes image_path, previous_task, current_task, next_task, and objective.
-                        next_task_description = tasks[task_idx + 1] if task_idx + 1 < len(tasks) else "None (last task)"
-                        prev_task_description = tasks[task_idx -1] if task_idx > 0 else "None (first task)"
-
-                        analysis_result = active_client.analyze_state_vision(
-                            image_path=annotated_image_path_after_action,
-                            previous_task=prev_task_description,
-                            current_task=current_task,
-                            next_task=next_task_description,
-                            objective=st.session_state.todo_objective,
-                            model_name=vision_model
-                        )
-                    except NotImplementedError: # Should not happen
-                        add_message("assistant", f"State analysis (analyze_state_vision) is not available for {client_name}. Cannot verify step.", "error")
-                        st.session_state.orchestrator_active = False
-                        st.rerun()
-                        return
-                    except Exception as e:
-                        add_message("assistant", f"Error during state analysis with Ollama: {e}", "error")
-                        st.session_state.orchestrator_active = False
-                        st.rerun()
-                        return
+                except Exception as e:
+                    add_message("assistant", f"Error during state analysis with {client_display_name}: {e}", "error")
+                    st.session_state.orchestrator_active = False
+                    st.rerun()
+                    return
 
                 analysis_summary = analysis_result.get('summary', 'AI provided no summary for the state analysis.')
-                vision_prefix = f"**Vision Model ({client_name} - {vision_model}) Analysis:**"
+                vision_prefix = f"**AI Vision Analysis ({vision_model_display}):**" # More generic
                 add_message("assistant", f"{vision_prefix} {analysis_summary}", "info")
 
-                st.session_state.execution_summary.append({"task": current_task, "vision_model_used": f"{client_name} ({vision_model})", "vision_analysis": analysis_result})
+                st.session_state.execution_summary.append({"task": current_task, "vision_model_used": f"{client_display_name} ({vision_model_display})", "vision_analysis": analysis_result})
                 if len(st.session_state.execution_summary) > MAX_EXECUTION_SUMMARY_ITEMS:
                     st.session_state.execution_summary = st.session_state.execution_summary[-MAX_EXECUTION_SUMMARY_ITEMS:]
 
@@ -880,43 +762,32 @@ def main():
                     with open(final_annotated_image_path, 'rb') as img_file:
                         final_image_data = base64.b64encode(img_file.read()).decode('utf-8')
 
-                    add_message("assistant", f"🧐 Using {client_name} ({vision_model}) for final verification...", "info")
+                    add_message("assistant", f"🧐 Using {client_display_name} (model: {vision_model_display}) for final verification...", "info")
 
-                    prev_task_final = tasks[-1] if tasks else "None"
-                    if st.session_state.ai_provider == "Mistral":
-                        final_analysis = active_client.analyze_state_vision(
-                            final_image_data,
-                            "Final objective verification",
-                            st.session_state.todo_objective,
-                            model_name=vision_model
+                    try:
+                        final_analysis = llamaindex_client.analyze_state_vision(
+                            image_base64=final_image_data, # Pass base64 string
+                            current_task="Final objective verification",
+                            objective=st.session_state.todo_objective
                         )
-                    elif st.session_state.ai_provider == "Ollama":
-                        final_analysis = active_client.analyze_state_vision(
-                            image_path=final_annotated_image_path,
-                            previous_task=prev_task_final, # Context of the last actual task
-                            current_task="Final objective verification", # Current action is this verification
-                            next_task="None (End of process)",
-                            objective=st.session_state.todo_objective,
-                            model_name=vision_model
-                        )
+                    except Exception as e:
+                        add_message("assistant", f"Error during final verification with {client_display_name}: {e}", "error")
+                        final_analysis = {"summary": f"Final verification failed due to error: {e}", "objective_completed": False} # Default on error
 
                     final_summary = final_analysis.get('summary', 'AI provided no summary for the final check.')
-                    final_check_prefix = f"**Final Check ({client_name} - {vision_model}):**"
+                    final_check_prefix = f"**AI Final Check ({vision_model_display}):**" # More generic
                     add_message("assistant", f"{final_check_prefix} {final_summary}", "info")
 
                     if final_analysis.get("objective_completed"):
                         add_message("assistant", "🎉 Final verification confirms objective completed!", "success")
                     else:
                         add_message("assistant", "⚠️ Final verification suggests the objective may not be fully met or could not be confirmed.", "error")
-
-                except ollama.ResponseError as e: # Catch specific Ollama errors
-                     add_message("assistant", f"Ollama API error during final verification: {str(e)}. Check model '{vision_model}'.", "error")
-                except Exception as e:
+                except Exception as e: # General error during final verification image handling or call
                     add_message("assistant", f"Error during final verification: {str(e)}", "error")
             else:
                 add_message("assistant", "Could not take screenshot for final verification.", "error")
 
-            st.session_state.orchestrator_active = False # End of orchestration
+            st.session_state.orchestrator_active = False
             # log_debug_message(f"DEBUG_STATE: Just before st.rerun() after all tasks processed, 'messages' in session_state: {'messages' in st.session_state}") # REMOVED
             st.rerun()
 
