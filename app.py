@@ -4,10 +4,21 @@ import time
 import base64
 from datetime import datetime
 from browser_automation import BrowserAutomation
+import streamlit as st # Ensure streamlit is imported if not already fully at the top
+import os
+import time # Ensure time is imported
+import base64
+from datetime import datetime
+from browser_automation import BrowserAutomation
 from mistral_client import MistralClient
-from ollama_client import OllamaClient # Import OllamaClient
+from ollama_client import (
+    OllamaClient, start_ollama_server, is_ollama_server_responsive,
+    stop_ollama_server, pull_model_via_ollama,
+    check_model_pulled_via_ollama_api, get_ollama_model_file_path
+)
+from local_llm_client import LlamaIndexLocalClient # Import LlamaIndexLocalClient
 from element_detector import ElementDetector
-import todo_manager # Added import
+import todo_manager
 import traceback
 import re # Added import
 
@@ -72,11 +83,25 @@ def initialize_session_state():
     # Mapping for provider selection - ensure this is always set
     st.session_state.provider_mapping = {
         'Mistral': 'mistral',
-        'Ollama (Llama2)': 'ollama'
+        'Ollama (Official API)': 'ollama', # Renamed for clarity
+        'Ollama (Local Llama2 via LlamaIndex)': 'ollama_local_llaindex'
     }
     # Active provider key initialization - ensure this is always set after selected_provider and mapping
-    st.session_state.active_provider_key = st.session_state.provider_mapping.get(st.session_state.selected_provider, 'mistral')
+    st.session_state.active_provider_key = st.session_state.provider_mapping.get(st.session_state.selected_provider, 'mistral') # Default to mistral key
 
+    # New session state variables for Ollama local LlamaIndex setup
+    if 'ollama_server_status' not in st.session_state:
+        st.session_state.ollama_server_status = 'stopped'
+    if 'llama2_pull_status' not in st.session_state:
+        st.session_state.llama2_pull_status = 'not_pulled'
+    if 'local_model_file_path' not in st.session_state:
+        st.session_state.local_model_file_path = None
+    if 'local_llm_client_status' not in st.session_state:
+        st.session_state.local_llm_client_status = 'not_initialized'
+    if 'ollama_local_setup_stage' not in st.session_state:
+        st.session_state.ollama_local_setup_stage = 'initial'
+    if 'ollama_popen_handle' not in st.session_state: # To store Popen object from start_ollama_server
+        st.session_state.ollama_popen_handle = None
 
 def setup_sidebar():
     """Setup sidebar for API key configuration and controls"""
@@ -128,19 +153,151 @@ def setup_sidebar():
             st.session_state.providers['mistral'] = None
             st.session_state.mistral_client = None
 
-    elif st.session_state.selected_provider == 'Ollama (Llama2)':
-        st.sidebar.info("ℹ️ Using local Ollama (Llama2). Ensure Ollama is running.")
-        if not st.session_state.providers.get('ollama'): # If not initialized successfully during session_state init
+    elif st.session_state.selected_provider == 'Ollama (Official API)': # Changed from 'Ollama (Llama2)'
+        st.sidebar.info("ℹ️ Using Ollama via its official API. Ensure Ollama server is running and accessible.")
+        if not st.session_state.providers.get('ollama'):
             try:
                 st.session_state.providers['ollama'] = OllamaClient()
-                print("OllamaClient initialized/re-initialized via sidebar.")
+                print("OllamaClient (Official API) initialized/re-initialized via sidebar.")
                 if st.session_state.providers['ollama'].list_models() is not None:
-                    st.sidebar.success("✅ Ollama client connected.")
+                    st.sidebar.success("✅ Ollama (Official API) client connected.")
                 else:
-                    st.sidebar.warning("⚠️ Ollama client might not be connected. Check if Ollama is running.")
+                    st.sidebar.warning("⚠️ Ollama (Official API) client might not be connected.")
             except Exception as e:
-                st.sidebar.error(f"❌ Failed to connect to Ollama: {e}")
+                st.sidebar.error(f"❌ Failed to connect to Ollama (Official API): {e}")
                 st.session_state.providers['ollama'] = None
+
+    elif st.session_state.selected_provider == 'Ollama (Local Llama2 via LlamaIndex)':
+        st.sidebar.subheader("Local Llama2 Setup (via LlamaIndex)")
+        st.sidebar.info("Follow these steps to set up and use a local Llama2 model with LlamaIndex.")
+
+        # Stage: Initial / Server Management
+        st.sidebar.markdown("**Step 1: Ollama Server Management**")
+        st.sidebar.write(f"Server Status: `{st.session_state.ollama_server_status}`")
+
+        if st.session_state.ollama_server_status == 'starting':
+            with st.spinner("Starting Ollama server..."):
+                # Note: start_ollama_server manages a global process handle in ollama_client.py
+                # For Streamlit, it's better if Popen object is stored in session_state.
+                # Assuming start_ollama_server is adjusted or we rely on its internal global management for now.
+                if start_ollama_server(): # This function now needs to set the global process or return it
+                    st.session_state.ollama_server_status = 'running'
+                    st.session_state.ollama_local_setup_stage = 'server_started'
+                else:
+                    st.session_state.ollama_server_status = 'failed_to_start'
+                st.experimental_rerun()
+        elif st.session_state.ollama_server_status in ['stopped', 'failed_to_start', 'server_stopped_after_pull']:
+            if st.sidebar.button("Start Ollama Server", key="start_ollama_srv_btn"):
+                st.session_state.ollama_server_status = 'starting'
+                st.experimental_rerun()
+        elif st.session_state.ollama_server_status == 'running':
+            st.sidebar.success("✅ Ollama Server is running.")
+        elif st.session_state.ollama_server_status == 'stopping':
+            with st.spinner("Stopping Ollama server..."):
+                if stop_ollama_server(): # Relies on global process handle in ollama_client or one stored in session_state
+                    st.session_state.ollama_server_status = 'stopped'
+                    if st.session_state.ollama_local_setup_stage == 'model_pulled': # Transitioning from model pulled state
+                        st.session_state.ollama_local_setup_stage = 'server_stopped_after_pull'
+                    else: # General stop
+                        st.session_state.ollama_local_setup_stage = 'initial'
+                else:
+                    st.session_state.ollama_server_status = 'failed_to_stop'
+                    st.error("Failed to stop Ollama server.")
+                st.experimental_rerun()
+
+        # Stage: Model Pulling
+        # Show this if server is running AND we are in a stage before model is confirmed pulled
+        if st.session_state.ollama_server_status == 'running' and \
+           st.session_state.ollama_local_setup_stage in ['initial', 'server_started']:
+            st.sidebar.markdown("**Step 2: Pull Llama2 Model**")
+            st.sidebar.write(f"Llama2 Pull Status: `{st.session_state.llama2_pull_status}`")
+
+            if st.session_state.llama2_pull_status == 'pulling':
+                with st.spinner("Pulling llama2 model... This can take a while."):
+                    success, message = pull_model_via_ollama('llama2')
+                    if success:
+                        st.session_state.llama2_pull_status = 'pulled'
+                        st.session_state.ollama_local_setup_stage = 'model_pulled'
+                    else:
+                        st.session_state.llama2_pull_status = 'failed'
+                        st.error(message)
+                    st.experimental_rerun()
+            elif st.session_state.llama2_pull_status in ['not_pulled', 'failed']:
+                if st.sidebar.button("Pull Llama2 Model via Ollama", key="pull_llama2_btn"):
+                    st.session_state.llama2_pull_status = 'pulling'
+                    st.experimental_rerun()
+            elif st.session_state.llama2_pull_status == 'pulled':
+                st.sidebar.success("✅ Llama2 model pulled successfully.")
+                st.session_state.ollama_local_setup_stage = 'model_pulled' # Ensure stage updates
+
+        # Stage: Server Shutdown (Optional after pull)
+        if st.session_state.ollama_local_setup_stage == 'model_pulled' and st.session_state.ollama_server_status == 'running':
+            st.sidebar.markdown("**Step 3: Stop Ollama Server (Recommended)**")
+            if st.sidebar.button("Stop Ollama Server", key="stop_ollama_srv_btn_after_pull"):
+                st.session_state.ollama_server_status = 'stopping' # This will trigger logic above
+                st.experimental_rerun()
+
+        # Stage: Model File Location & LlamaIndex Client Initialization
+        # Show if model pulled & server stopped, or if model was already pulled and server is not the concern now
+        if st.session_state.ollama_local_setup_stage in ['model_pulled', 'server_stopped_after_pull', 'model_path_found'] or \
+           (st.session_state.llama2_pull_status == 'pulled' and st.session_state.ollama_server_status != 'running'):
+
+            # If server was running and model pulled, but user didn't explicitly stop, they might go straight here.
+            # We ideally want server stopped before LlamaIndex uses the file.
+            if st.session_state.ollama_server_status == 'running' and st.session_state.ollama_local_setup_stage == 'model_pulled':
+                 st.sidebar.warning("Recommendation: Stop Ollama server (Step 3) before initializing LlamaIndex client if Ollama server was used for pulling.")
+
+            st.sidebar.markdown("**Step 4: Initialize LlamaIndex Client**")
+            st.sidebar.write(f"LlamaIndex Client Status: `{st.session_state.local_llm_client_status}`")
+
+            if st.session_state.local_llm_client_status == 'initializing':
+                with st.spinner("Locating model file and initializing LlamaIndex client..."):
+                    path, msg = get_ollama_model_file_path('llama2') # Assuming 'llama2' means 'llama2:latest'
+                    if path:
+                        st.session_state.local_model_file_path = path
+                        st.sidebar.info(f"Model file found: {path}")
+                        # Ensure provider entry exists for 'ollama_local_llaindex'
+                        if 'ollama_local_llaindex' not in st.session_state.providers:
+                             st.session_state.providers['ollama_local_llaindex'] = None
+
+                        client = LlamaIndexLocalClient(model_path=path)
+                        if client.is_initialized:
+                            st.session_state.providers['ollama_local_llaindex'] = client
+                            st.session_state.local_llm_client_status = 'initialized'
+                            st.session_state.ollama_local_setup_stage = 'llm_initialized'
+                            st.success("LlamaIndex client initialized successfully!")
+                        else:
+                            st.session_state.local_llm_client_status = 'failed'
+                            st.error("Failed to initialize LlamaIndex client with the model file.")
+                    else:
+                        st.session_state.local_llm_client_status = 'failed'
+                        st.error(f"Failed to locate Llama2 model file: {msg}")
+                    st.experimental_rerun()
+
+            elif st.session_state.local_llm_client_status in ['not_initialized', 'failed']:
+                if st.sidebar.button("Locate Model & Init LlamaIndex Client", key="init_llaindex_btn"):
+                    # Pre-check: ensure model is pulled if we have that info
+                    if st.session_state.llama2_pull_status != 'pulled':
+                        st.sidebar.error("Llama2 model does not seem to be pulled. Please complete Step 2 first.")
+                    # Pre-check: ensure server is stopped if it was used
+                    elif st.session_state.ollama_server_status == 'running' and st.session_state.ollama_local_setup_stage not in ['model_pulled_server_already_stopped']: # A bit complex condition
+                        st.sidebar.warning("Please stop the Ollama server (Step 3) before initializing the LlamaIndex client if the server was used for pulling.")
+                    else:
+                        st.session_state.local_llm_client_status = 'initializing'
+                        st.experimental_rerun()
+
+            elif st.session_state.local_llm_client_status == 'initialized':
+                st.sidebar.success("✅ LlamaIndex Client is initialized.")
+                st.session_state.ollama_local_setup_stage = 'llm_initialized' # Ensure stage is set
+
+        # Final Stage: Ready
+        if st.session_state.ollama_local_setup_stage == 'llm_initialized':
+            st.sidebar.success("✅ Ollama (Local Llama2 via LlamaIndex) is ready!")
+            if st.session_state.active_provider_key != 'ollama_local_llaindex':
+                # This might cause a loop if not handled carefully, radio button should be the source of truth for active_provider_key
+                # st.session_state.active_provider_key = 'ollama_local_llaindex'
+                # st.experimental_rerun()
+                pass
 
 
     st.sidebar.divider()
@@ -174,15 +331,23 @@ def setup_sidebar():
     st.sidebar.write(f"Browser: {browser_status}")
 
     # Display status based on selected provider
-    active_provider_key = st.session_state.active_provider_key
+    active_provider_key = st.session_state.active_provider_key # st.session_state.provider_mapping.get(st.session_state.selected_provider)
     client_instance = st.session_state.providers.get(active_provider_key)
+
+    st.sidebar.subheader(f"Status ({st.session_state.selected_provider})")
 
     if active_provider_key == 'mistral':
         api_status = "🟢 Connected" if client_instance and getattr(client_instance, 'api_key', None) else "🔴 Not configured"
-        st.sidebar.write(f"Mistral AI: {api_status}")
-    elif active_provider_key == 'ollama':
+        st.sidebar.write(f"Mistral Client: {api_status}")
+    elif active_provider_key == 'ollama': # This is now 'Ollama (Official API)'
         ollama_status = "🟢 Connected" if client_instance and client_instance.list_models() is not None else "🔴 Not connected/configured"
-        st.sidebar.write(f"Ollama: {ollama_status}")
+        st.sidebar.write(f"Ollama API Client: {ollama_status}")
+    elif active_provider_key == 'ollama_local_llaindex':
+        local_llm_status = "🟢 Initialized" if client_instance and getattr(client_instance, 'is_initialized', False) else "🔴 Not initialized"
+        st.sidebar.write(f"Local LlamaIndex Client: {local_llm_status}")
+        # Detailed status already displayed within its setup section
+        if st.session_state.ollama_local_setup_stage != 'llm_initialized':
+             st.sidebar.warning("Setup for Local Llama2 not complete.")
 
 
 def display_chat_history():
