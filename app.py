@@ -11,8 +11,137 @@ import traceback
 import re # Added import
 from e2b_desktop import Sandbox # Corrected import
 import asyncio
+from image_utils import gridify_image # Added import
 # st.components.v1.iframe is available via streamlit import as st
 
+# Ensure datetime is imported if not already (it's imported as `from datetime import datetime`)
+# import datetime # This specific import form might be needed if using datetime.datetime directly without prior specific import
+
+def take_e2b_screenshot_and_display():
+    """
+    Captures a screenshot from the E2B session, optionally grids it, 
+    and displays it in the chat.
+    Returns the path to the (potentially gridded) image, or original if gridding fails, 
+    or None if initial capture fails.
+    """
+    if not st.session_state.get('e2b_session'):
+        add_message("assistant", "E2B session not available to take screenshot.", "error")
+        return None
+
+    try:
+        e2b_screenshots_dir = "e2b_screenshots"
+        os.makedirs(e2b_screenshots_dir, exist_ok=True)
+
+        # Capture screenshot
+        image_bytes = st.session_state.e2b_session.screenshot() # This is already bytes
+
+        # Generate filename and save
+        # Using current datetime import style
+        current_time = datetime.now()
+        timestamp = current_time.strftime("%Y%m%d_%H%M%S_%f")
+        screenshot_filename = f"e2b_screenshot_{timestamp}.png"
+        screenshot_filepath = os.path.join(e2b_screenshots_dir, screenshot_filename)
+
+        with open(screenshot_filepath, "wb") as f:
+            f.write(image_bytes)
+        
+        # Now, try to grid the saved screenshot
+        gridded_screenshot_filename = f"gridded_e2b_screenshot_{timestamp}.png"
+        gridded_screenshot_filepath = os.path.join(e2b_screenshots_dir, gridded_screenshot_filename)
+
+        gridded_image_path_or_none = gridify_image(
+            screenshot_filepath, 
+            gridded_screenshot_filepath, 
+            rows=10, 
+            cols=10
+        )
+
+        if gridded_image_path_or_none:
+            add_message("assistant", gridded_image_path_or_none, msg_type="image", caption="Gridded E2B Desktop Screenshot (10x10)")
+            return gridded_image_path_or_none
+        else:
+            add_message("assistant", "Failed to create gridded screenshot. Displaying original.", "warning")
+            add_message("assistant", screenshot_filepath, msg_type="image", caption="E2B Desktop Screenshot (Original - Gridding Failed)")
+            return screenshot_filepath # Return original if gridding failed
+
+    except Exception as e:
+        error_msg = f"Failed to take or process E2B screenshot: {str(e)}"
+        add_message("assistant", error_msg, "error")
+        # Optionally print traceback for server-side logs
+        # print(f"E2B Screenshot Error: {traceback.format_exc()}") 
+        return None
+
+def execute_e2b_click(target, screen_width=1024, screen_height=768, rows=10, cols=10):
+    """
+    Executes a click in the E2B session at the specified target.
+    Target can be a grid cell (e.g., "A1") or coordinates (e.g., "100,200").
+    """
+    if not st.session_state.get('e2b_session'):
+        add_message("assistant", "E2B session not available for click.", "error")
+        return False
+
+    x, y = -1, -1 # Initialize coordinates
+
+    try:
+        if ',' in target:
+            # Parse as coordinates
+            x_str, y_str = target.split(',')
+            x = int(x_str.strip())
+            y = int(y_str.strip())
+            if not (0 <= x < screen_width and 0 <= y < screen_height):
+                add_message("assistant", f"Coordinates ({x},{y}) are out of screen bounds ({screen_width}x{screen_height}).", "error")
+                return False
+        else:
+            # Parse as grid cell
+            target = target.upper().strip()
+            if not (len(target) >= 2 and target[0].isalpha() and target[1:].isdigit()):
+                 add_message("assistant", f"Invalid grid cell format: '{target}'. Expected e.g., 'A1', 'C5'.", "error")
+                 return False
+
+            row_char = target[0]
+            col_num_str = target[1:]
+            
+            row_index = ord(row_char) - ord('A')
+            col_index = int(col_num_str) - 1
+
+            if not (0 <= row_index < rows and 0 <= col_index < cols):
+                add_message("assistant", f"Grid cell '{target}' (row {row_index}, col {col_index}) is out of bounds for {rows}x{cols} grid.", "error")
+                return False
+
+            cell_width = screen_width / cols
+            cell_height = screen_height / rows
+            x = int((col_index + 0.5) * cell_width)
+            y = int((row_index + 0.5) * cell_height)
+
+        # Execute click
+        st.session_state.e2b_session.left_click(x=x, y=y)
+        add_message("assistant", f"E2B: Clicked at ({x},{y}) (target: {target})", "action")
+        return True
+
+    except ValueError:
+        add_message("assistant", f"Error parsing target '{target}'. Ensure coordinates are numeric or grid cell is valid.", "error")
+        return False
+    except Exception as e:
+        add_message("assistant", f"Error during E2B click: {str(e)}", "error")
+        # print(f"E2B Click Error: {traceback.format_exc()}")
+        return False
+
+def execute_e2b_type(text_to_type):
+    """
+    Types the given text in the E2B session.
+    """
+    if not st.session_state.get('e2b_session'):
+        add_message("assistant", "E2B session not available for typing.", "error")
+        return False
+
+    try:
+        st.session_state.e2b_session.write(text_to_type)
+        add_message("assistant", f"E2B: Typed: '{text_to_type}'", "action")
+        return True
+    except Exception as e:
+        add_message("assistant", f"Error during E2B type: {str(e)}", "error")
+        # print(f"E2B Type Error: {traceback.format_exc()}")
+        return False
 
 def initialize_session_state():
     """Initialize session state variables"""
@@ -404,13 +533,22 @@ def main():
     if user_input:
         add_message("user", user_input)
 
-        # If E2B Desktop is active and running, inform user and skip browser automation flow for this input
+        # If E2B Desktop is active and running, take a screenshot and then stop further processing for now.
         if st.session_state.get('e2b_desktop_enabled') and st.session_state.get('e2b_session'):
-            add_message("assistant", "E2B Desktop is active. Please use the E2B window for your tasks. Chat input here is for general interaction or future E2B control features.", "info")
-            st.rerun() # Rerun to display the message
-            return # Exit this processing path
+            add_message("assistant", "E2B mode: Capturing current desktop state...", "info")
+            e2b_screenshot_path = take_e2b_screenshot_and_display()
+            if e2b_screenshot_path:
+                add_message("assistant", f"E2B Screenshot taken: {e2b_screenshot_path}", "info")
+                # Placeholder for next steps (AI processing, etc.)
+            else:
+                add_message("assistant", "Could not capture E2B screenshot.", "error")
+            
+            st.session_state.current_objective = user_input # Still capture objective
+            # Prevent falling into Selenium orchestrator logic for now
+            st.rerun() 
+            return 
 
-        # Check prerequisites (only if not in active E2B mode, due to the return above)
+        # Check prerequisites (only if not in active E2B mode, due to the early return above)
         if not st.session_state.mistral_client:
             add_message("assistant", "Please configure your Mistral AI API key in the sidebar first.", "error")
             st.rerun()

@@ -3,3 +3,4 @@ opencv-python
 geckodriver
 webdriver-manager
 e2b-desktop
+Pillow
