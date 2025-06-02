@@ -1,4 +1,4 @@
 selenium
 opencv-python
 geckodriver
-requests
+webdriver-manager

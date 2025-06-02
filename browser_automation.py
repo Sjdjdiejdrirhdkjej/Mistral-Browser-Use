@@ -9,8 +9,10 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.keys import Keys # Added import
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import traceback
+from webdriver_manager.firefox import GeckoDriverManager # New import
 
 class BrowserAutomation:
     def __init__(self):
@@ -48,7 +50,7 @@ class BrowserAutomation:
         raise Exception("Firefox binary not found. Please install Firefox.")
     
     def start_browser(self):
-        """Start Firefox browser in headful mode"""
+        """Start Firefox browser, configured for headless operation."""
         try:
             # Find Firefox binary
             firefox_binary = self.find_firefox_binary()
@@ -56,20 +58,30 @@ class BrowserAutomation:
             # Setup Firefox options
             options = Options()
             options.binary_location = firefox_binary
+            options.add_argument('--headless') # Run in headless mode
             
             # Configure for headful mode with some optimizations
             options.add_argument('--width=1920')
             options.add_argument('--height=1080')
-            options.set_preference('dom.webdriver.enabled', False)
+            # options.set_preference('dom.webdriver.enabled', False) # Suspected cause of timeout
             options.set_preference('useAutomationExtension', False)
-            options.set_preference('general.useragent.override', 
-                                 'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0')
+            # options.set_preference('general.useragent.override',
+            #                      'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0')
             
             # Create screenshots directory if it doesn't exist
             os.makedirs('screenshots', exist_ok=True)
             
+            # Use webdriver-manager to get geckodriver
+            geckodriver_path = GeckoDriverManager().install()
+
+            # Setup Firefox service
+            service = Service(
+                executable_path=geckodriver_path,
+                service_log_path='geckodriver.log'
+            )
+
             # Start the browser
-            self.driver = webdriver.Firefox(options=options)
+            self.driver = webdriver.Firefox(service=service, options=options)
             self.wait = WebDriverWait(self.driver, 10)
             
             # Navigate to a default page
@@ -267,3 +279,38 @@ class BrowserAutomation:
             self.wait = None
             self.element_map = {}
             print("Browser closed")
+
+    def press_key(self, key_name: str):
+        """Press a special key (e.g., Enter, Escape, Tab)."""
+        if not self.driver:
+            print("Error: Driver not available for press_key action.") # Or raise an exception
+            return
+
+        key_to_press = None
+        normalized_key_name = key_name.lower()
+
+        if normalized_key_name == "enter":
+            key_to_press = Keys.ENTER
+        elif normalized_key_name == "escape":
+            key_to_press = Keys.ESCAPE
+        elif normalized_key_name == "tab":
+            key_to_press = Keys.TAB
+        # Add more key mappings here if needed
+        # Example:
+        # elif normalized_key_name == "space":
+        #     key_to_press = Keys.SPACE
+        # elif normalized_key_name == "page_down":
+        #     key_to_press = Keys.PAGE_DOWN
+        else:
+            print(f"Warning: Unsupported key_name '{key_name}' provided to press_key. No action taken.")
+            # Consider raising an error for unsupported keys if strict behavior is desired:
+            # raise ValueError(f"Unsupported key_name: {key_name}")
+            return
+
+        try:
+            ActionChains(self.driver).send_keys(key_to_press).perform()
+            print(f"Successfully pressed key: {normalized_key_name}") # Use proper logging in a real app
+        except Exception as e:
+            print(f"Error pressing key '{normalized_key_name}': {e}")
+            # Consider re-raising the exception or a custom one if the caller needs to handle it:
+            # raise Exception(f"Failed to press key {normalized_key_name}: {e}")
