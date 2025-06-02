@@ -26,6 +26,7 @@ def take_e2b_screenshot_and_display():
     """
     if not st.session_state.get('e2b_session'):
         add_message("assistant", "E2B session not available to take screenshot.", "error")
+        add_message("assistant", "Debug (take_e2b_screenshot): Session not active, returning None.", "info")
         return None
 
     try:
@@ -58,15 +59,18 @@ def take_e2b_screenshot_and_display():
 
         if gridded_image_path_or_none:
             add_message("assistant", gridded_image_path_or_none, msg_type="image", caption="Gridded E2B Desktop Screenshot (10x10)")
+            add_message("assistant", f"Debug (take_e2b_screenshot): Gridding successful, returning gridded path: {gridded_image_path_or_none}", "info")
             return gridded_image_path_or_none
         else:
             add_message("assistant", "Failed to create gridded screenshot. Displaying original.", "warning")
             add_message("assistant", screenshot_filepath, msg_type="image", caption="E2B Desktop Screenshot (Original - Gridding Failed)")
+            add_message("assistant", f"Debug (take_e2b_screenshot): Gridding failed, returning original path: {screenshot_filepath}", "info")
             return screenshot_filepath # Return original if gridding failed
 
     except Exception as e:
         error_msg = f"Failed to take or process E2B screenshot: {str(e)}"
         add_message("assistant", error_msg, "error")
+        add_message("assistant", "Debug (take_e2b_screenshot): Exception during capture/processing, returning None.", "info")
         # Optionally print traceback for server-side logs
         # print(f"E2B Screenshot Error: {traceback.format_exc()}") 
         return None
@@ -616,6 +620,7 @@ def main():
             # For now, gridify_image uses its own defaults (10x10) if not specified.
             # The take_e2b_screenshot_and_display function internally calls gridify_image.
             gridded_screenshot_path = take_e2b_screenshot_and_display() 
+            st.sidebar.info(f"DBG_RETURN_PATH: '{gridded_screenshot_path}'") # New debug message in sidebar
 
             if not gridded_screenshot_path:
                 add_message("assistant", "E2B Automation: Failed to get screenshot. Cannot proceed.", "error")
@@ -623,8 +628,8 @@ def main():
                 st.rerun()
                 # return
             else:
-                add_message("assistant", "Debug: Screenshot successful, proceeding to AI prompt.", "info")
-                add_message("assistant", "Debug: Preparing AI system prompt.", "info")
+                # Removed: add_message("assistant", "Debug: Screenshot successful, proceeding to AI prompt.", "info")
+                # Removed: add_message("assistant", "Debug: Preparing AI system prompt.", "info")
                 e2b_system_prompt = """
 You are an expert AI assistant tasked with automating a remote desktop environment based on user objectives. You will be provided with a user's objective and a gridded screenshot of the current desktop state. The screenshot is overlaid with a 10x10 grid (labeled A1-A10, B1-B10, ..., J1-J10 where letters are rows A-J and numbers are columns 1-10). Your goal is to determine the single next best action to perform on the desktop to achieve the objective.
 
@@ -656,7 +661,7 @@ Analyze the provided gridded screenshot and output your next action.
                     else: # Mistral client is available
                         multimodal_prompt = f"Objective: {st.session_state.current_objective}\nPrevious Action: {st.session_state.e2b_last_action or 'None'}\nAnalyze the screenshot and follow system instructions."
                         
-                        add_message("assistant", "Debug: About to call Mistral client.", "info")
+                        # Removed: add_message("assistant", "Debug: About to call Mistral client.", "info")
                         response_payload = st.session_state.mistral_client.analyze_and_decide(
                             image_b64=image_data_for_ai,
                             user_prompt=multimodal_prompt, 
@@ -664,7 +669,7 @@ Analyze the provided gridded screenshot and output your next action.
                             current_context=e2b_system_prompt 
                         )
                         ai_response_text = response_payload.get("action", "").strip() if isinstance(response_payload, dict) else str(response_payload).strip()
-                        add_message("assistant", f"Debug: AI response received: '{ai_response_text}'", "info")
+                        # Removed: add_message("assistant", f"Debug: AI response received: '{ai_response_text}'", "info")
 
                         if not ai_response_text:
                             add_message("assistant", "E2B Automation: AI did not return an action.", "error")
@@ -676,15 +681,15 @@ Analyze the provided gridded screenshot and output your next action.
                             action_executed = False
                             if ai_response_text.upper().startswith("CLICK("):
                                 target = ai_response_text[len("CLICK("):-1]
-                                add_message("assistant", f"Debug: Attempting to execute parsed action: CLICK on {target}", "info")
+                                # Removed: add_message("assistant", f"Debug: Attempting to execute parsed action: CLICK on {target}", "info")
                                 action_executed = execute_e2b_click(target, screen_width=1024, screen_height=768, rows=st.session_state.e2b_grid_rows, cols=st.session_state.e2b_grid_cols)
                             elif ai_response_text.upper().startswith("TYPE("):
                                 text_to_type = ai_response_text[len("TYPE("):-1]
-                                add_message("assistant", f"Debug: Attempting to execute parsed action: TYPE '{text_to_type}'", "info")
+                                # Removed: add_message("assistant", f"Debug: Attempting to execute parsed action: TYPE '{text_to_type}'", "info")
                                 action_executed = execute_e2b_type(text_to_type)
                             elif ai_response_text.upper().startswith("SCROLL("):
                                 direction = ai_response_text[len("SCROLL("):-1].lower()
-                                add_message("assistant", f"Debug: Attempting to execute parsed action: SCROLL {direction}", "info")
+                                # Removed: add_message("assistant", f"Debug: Attempting to execute parsed action: SCROLL {direction}", "info")
                                 add_message("assistant", f"E2B: SCROLL({direction}) requested (not yet implemented).", "action")
                                 action_executed = True 
                             elif ai_response_text.upper().startswith("COMPLETE("):
