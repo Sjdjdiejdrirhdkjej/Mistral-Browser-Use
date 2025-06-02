@@ -2,3 +2,4 @@ selenium
 opencv-python
 geckodriver
 webdriver-manager
+ollama
