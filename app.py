@@ -722,12 +722,14 @@ Analyze the provided gridded screenshot/description and output your next action.
                             add_message("assistant", f"🔍 E2B: Performing OCR on: {gridded_screenshot_path}...", "info")
                             e2b_ocr_text = extract_text_from_image(gridded_screenshot_path)
                             if e2b_ocr_text == "OCR_ERROR_TESSERACT_NOT_FOUND":
-                                add_message("assistant", "❌ E2B OCR Error: Tesseract not found.", "error")
+                                add_message("assistant", "❌ E2B OCR Error: Tesseract engine not found. Please ensure it's installed and in PATH.", "error")
                             elif not e2b_ocr_text.strip():
                                 add_message("assistant", "ℹ️ E2B OCR: No text detected.", "info")
                             else:
-                                e2b_ocr_summary = e2b_ocr_text[:150].replace('\n', ' ') + "..." if len(e2b_ocr_text) > 150 else e2b_ocr_text.replace('\n', ' ')
-                                add_message("assistant", f"📄 E2B OCR (snippet): \"{e2b_ocr_summary}\"", "info")
+                                add_message("assistant", f"""📄 E2B Full OCR Result:
+```text
+{e2b_ocr_text}
+```""", "info")
                         else:
                             add_message("assistant", "⚠️ E2B screenshot failed, skipping OCR.", "warning")
 
@@ -938,6 +940,37 @@ Analyze the provided gridded screenshot/description and output your next action.
             add_message("assistant", "🤔 Thinking on how to execute the current task...", "thinking")
             annotated_image_path = take_screenshot_and_analyze()
 
+            if st.session_state.browser and hasattr(st.session_state.browser, 'element_map') and st.session_state.browser.element_map:
+                element_details_list = []
+                for index, element in st.session_state.browser.element_map.items():
+                    try:
+                        element_text = element.text.strip()
+                        element_tag = element.tag_name.lower()
+                        descriptor = element_tag
+
+                        if element_tag == 'input':
+                            type_attr = element.get_attribute('type')
+                            if type_attr:
+                                descriptor = f'{type_attr} input'
+                            else:
+                                descriptor = 'input'
+                        elif element_tag == 'a':
+                            descriptor = 'link'
+                        elif element_tag == 'button':
+                            descriptor = 'button'
+                        # Add more specific descriptors if needed for other tags
+
+                        element_details_list.append(f"- '{element_text if element_text else '[No visible text]'}' ({descriptor} - Indexed at: {index})")
+                    except Exception as e:
+                        print(f"Error processing element {index} for display: {e}") # Log error, skip element
+
+                if element_details_list:
+                    elements_message = "ℹ️ Identified Interactable Elements:\n" + "\n".join(element_details_list)
+                    # Ensure message length is reasonable, truncate if necessary, though unlikely for typical element counts
+                    if len(elements_message) > 3000: # Max length for a message, adjust as needed
+                        elements_message = elements_message[:2997] + "..."
+                    add_message("assistant", elements_message, "info")
+
             ocr_text = ""
             if annotated_image_path: # Ensure screenshot was taken
                 add_message("assistant", f"🔍 Performing OCR on screenshot: {annotated_image_path}...", "info")
@@ -950,8 +983,10 @@ Analyze the provided gridded screenshot/description and output your next action.
                 elif not ocr_text.strip():
                     add_message("assistant", "ℹ️ OCR did not detect any text from the screenshot.", "info")
                 else:
-                    ocr_summary = ocr_text[:150].replace('\n', ' ') + "..." if len(ocr_text) > 150 else ocr_text.replace('\n', ' ')
-                    add_message("assistant", f"📄 OCR Result (snippet): \"{ocr_summary}\"", "info")
+                    add_message("assistant", f"""📄 Full OCR Result:
+```text
+{ocr_text}
+```""", "info")
             else:
                 add_message("assistant", "⚠️ Screenshot failed, skipping OCR.", "warning")
 
@@ -1045,8 +1080,10 @@ Analyze the provided gridded screenshot/description and output your next action.
                 elif not ocr_text_after_action.strip():
                     add_message("assistant", "ℹ️ OCR did not detect any text from the after-action screenshot.", "info")
                 else:
-                    ocr_summary_after = ocr_text_after_action[:150].replace('\n', ' ') + "..." if len(ocr_text_after_action) > 150 else ocr_text_after_action.replace('\n', ' ')
-                    add_message("assistant", f"📄 OCR Result after action (snippet): \"{ocr_summary_after}\"", "info")
+                    add_message("assistant", f"""📄 Full OCR Result after action:
+```text
+{ocr_text_after_action}
+```""", "info")
             else:
                 add_message("assistant", "⚠️ Screenshot after action failed, skipping OCR.", "warning")
 
@@ -1147,8 +1184,10 @@ Analyze the provided gridded screenshot/description and output your next action.
                 elif not final_ocr_text.strip():
                     add_message("assistant", "ℹ️ OCR did not detect any text from the final screenshot.", "info")
                 else:
-                    ocr_summary_final = final_ocr_text[:150].replace('\n', ' ') + "..." if len(final_ocr_text) > 150 else final_ocr_text.replace('\n', ' ')
-                    add_message("assistant", f"📄 Final OCR Result (snippet): \"{ocr_summary_final}\"", "info")
+                    add_message("assistant", f"""📄 Final Full OCR Result:
+```text
+{final_ocr_text}
+```""", "info")
             else:
                 add_message("assistant", "⚠️ Final screenshot failed, skipping OCR.", "warning")
 
