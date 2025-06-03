@@ -758,40 +758,37 @@ Analyze the provided gridded screenshot/description and output your next action.
                         add_message("assistant", "E2B Automation: AI did not return an action.", "error")
                         st.session_state.e2b_automation_active = False
                     else:
-                        add_message("assistant", f"E2B AI Action: {ai_response_text}", "info") # This one was already there
-                            st.session_state.e2b_last_action = ai_response_text
+                        add_message("assistant", f"E2B AI Action: {ai_response_text}", "info")
+                        st.session_state.e2b_last_action = ai_response_text
 
-                            action_executed = False
-                            if ai_response_text.upper().startswith("CLICK("):
-                                target = ai_response_text[len("CLICK("):-1]
-                                # Removed: add_message("assistant", f"Debug: Attempting to execute parsed action: CLICK on {target}", "info")
-                                action_executed = execute_e2b_click(target, screen_width=1024, screen_height=768, rows=st.session_state.e2b_grid_rows, cols=st.session_state.e2b_grid_cols)
-                            elif ai_response_text.upper().startswith("TYPE("):
-                                text_to_type = ai_response_text[len("TYPE("):-1]
-                                # Removed: add_message("assistant", f"Debug: Attempting to execute parsed action: TYPE '{text_to_type}'", "info")
-                                action_executed = execute_e2b_type(text_to_type)
-                            elif ai_response_text.upper().startswith("SCROLL("):
-                                direction = ai_response_text[len("SCROLL("):-1].lower()
-                                # Removed: add_message("assistant", f"Debug: Attempting to execute parsed action: SCROLL {direction}", "info")
-                                add_message("assistant", f"E2B: SCROLL({direction}) requested (not yet implemented).", "action")
-                                action_executed = True 
-                            elif ai_response_text.upper().startswith("COMPLETE("):
-                                summary = ai_response_text[len("COMPLETE("):-1]
-                                add_message("assistant", f"E2B Automation: Objective COMPLETE: {summary}", "success")
-                                st.session_state.e2b_automation_active = False
-                                action_executed = True
-                            elif ai_response_text.upper().startswith("ERROR("):
-                                error_reason = ai_response_text[len("ERROR("):-1]
-                                add_message("assistant", f"E2B Automation: AI reported an ERROR: {error_reason}", "error")
-                                st.session_state.e2b_automation_active = False
-                                action_executed = True 
-                            else:
-                                add_message("assistant", f"E2B Automation: Unknown AI action: {ai_response_text}", "error")
-                                st.session_state.e2b_automation_active = False
+                        action_executed = False
+                        if ai_response_text.upper().startswith("CLICK("):
+                            target = ai_response_text[len("CLICK("):-1]
+                            action_executed = execute_e2b_click(target, screen_width=1024, screen_height=768, rows=st.session_state.e2b_grid_rows, cols=st.session_state.e2b_grid_cols)
+                        elif ai_response_text.upper().startswith("TYPE("):
+                            text_to_type = ai_response_text[len("TYPE("):-1]
+                            action_executed = execute_e2b_type(text_to_type)
+                        elif ai_response_text.upper().startswith("SCROLL("):
+                            direction = ai_response_text[len("SCROLL("):-1].lower()
+                            add_message("assistant", f"E2B: SCROLL({direction}) requested (not yet implemented).", "action")
+                            action_executed = True
+                        elif ai_response_text.upper().startswith("COMPLETE("):
+                            summary = ai_response_text[len("COMPLETE("):-1]
+                            add_message("assistant", f"E2B Automation: Objective COMPLETE: {summary}", "success")
+                            st.session_state.e2b_automation_active = False
+                            action_executed = True
+                        elif ai_response_text.upper().startswith("ERROR("):
+                            error_reason = ai_response_text[len("ERROR("):-1]
+                            add_message("assistant", f"E2B Automation: AI reported an ERROR: {error_reason}", "error")
+                            st.session_state.e2b_automation_active = False
+                            action_executed = True
+                        else:
+                            add_message("assistant", f"E2B Automation: Unknown AI action: {ai_response_text}", "error")
+                            st.session_state.e2b_automation_active = False
 
-                            if not action_executed and st.session_state.e2b_automation_active: 
-                                 add_message("assistant", "E2B Automation: Action failed to execute. Stopping.", "error")
-                                 st.session_state.e2b_automation_active = False
+                        if not action_executed and st.session_state.e2b_automation_active:
+                             add_message("assistant", "E2B Automation: Action failed to execute. Stopping.", "error")
+                             st.session_state.e2b_automation_active = False
 
                 except Exception as e:
                     add_message("assistant", f"E2B Automation: Error during AI interaction or action execution: {str(e)}", "error")
