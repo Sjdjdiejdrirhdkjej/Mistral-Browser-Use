@@ -274,8 +274,8 @@ def setup_sidebar():
     st.sidebar.subheader("🤖 AI Provider")
     st.session_state.selected_ai_provider = st.sidebar.selectbox(
         "Choose AI Provider",
-        ["Mistral", "Xenova T5-Small"], # Changed "Ollama" to "Xenova T5-Small"
-        index=["Mistral", "Xenova T5-Small"].index(st.session_state.selected_ai_provider)
+        ["Mistral", "Xenova (FLAN-T5 Base)"],
+        index=["Mistral", "Xenova (FLAN-T5 Base)"].index(st.session_state.selected_ai_provider)
     )
     st.sidebar.divider()
 
@@ -294,20 +294,20 @@ def setup_sidebar():
         else:
             st.sidebar.warning("⚠️ Please enter your Mistral AI API key")
 
-    elif st.session_state.selected_ai_provider == "Xenova T5-Small":
-        st.sidebar.subheader("Xenova T5-Small (Local)")
+    elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
+        st.sidebar.subheader("Xenova (FLAN-T5 Base - Local)")
         if 'xenova_client' not in st.session_state or st.session_state.xenova_client is None:
             try:
-                with st.spinner("Loading Xenova T5-Small model..."):
+                with st.spinner("Loading Xenova (FLAN-T5 Base) model..."):
                     st.session_state.xenova_client = XenovaClient()
-                st.sidebar.success("✅ Xenova T5-Small client initialized.")
+                st.sidebar.success("✅ Xenova (FLAN-T5 Base) client initialized.")
             except Exception as e:
                 st.sidebar.error(f"❌ Failed to initialize Xenova client: {e}")
                 st.session_state.xenova_client = None # Ensure it's None on failure
         elif st.session_state.xenova_client:
-            st.sidebar.success("✅ Xenova T5-Small client ready.")
+            st.sidebar.success("✅ Xenova (FLAN-T5 Base) client ready.")
         else: # Should not happen if logic is correct, but as a fallback
-            st.sidebar.error("❌ Xenova T5-Small client not initialized. Try re-selecting.")
+            st.sidebar.error("❌ Xenova (FLAN-T5 Base) client not initialized. Try re-selecting.")
 
     st.sidebar.divider()
 
@@ -412,9 +412,9 @@ def setup_sidebar():
     if st.session_state.selected_ai_provider == "Mistral":
         api_status = "🟢 Connected" if st.session_state.get('mistral_client') else "🔴 Not configured"
         st.sidebar.write(f"Mistral AI: {api_status}")
-    elif st.session_state.selected_ai_provider == "Xenova T5-Small":
+    elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
         xenova_status = "🟢 Connected" if st.session_state.get('xenova_client') else "🔴 Not initialized"
-        st.sidebar.write(f"Xenova T5-Small: {xenova_status}")
+        st.sidebar.write(f"Xenova (FLAN-T5 Base): {xenova_status}")
 
 def display_chat_history():
     """Display chat message history"""
@@ -697,16 +697,16 @@ Analyze the provided gridded screenshot/description and output your next action.
                         response_payload = st.session_state.mistral_client.analyze_and_decide(
                             image_b64=image_data_for_ai,
                             user_prompt=multimodal_prompt,
-                            model_name="pixtral-large-latest",
+                            model_name="pixtral-large-latest", # This should be a vision model like pixtral
                             current_context=e2b_system_prompt
                         )
                         ai_response_text = response_payload.get("action", "").strip() if isinstance(response_payload, dict) else str(response_payload).strip()
 
-                    elif st.session_state.selected_ai_provider == "Xenova T5-Small":
+                    elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
                         if not st.session_state.xenova_client:
                             add_message("assistant", "Xenova client not available for E2B automation.", "error")
                             st.session_state.e2b_automation_active = False; st.rerun(); return
-                        e2b_screen_description_for_xenova = f"E2B desktop gridded view (A1-J10). Prev action: {st.session_state.e2b_last_action or 'None'}. Objective: {st.session_state.current_objective}. Follow system context for action format."
+                        # e2b_screen_description_for_xenova = f"E2B desktop gridded view (A1-J10). Prev action: {st.session_state.e2b_last_action or 'None'}. Objective: {st.session_state.current_objective}. Follow system context for action format."
                         # The e2b_system_prompt is already defined and passed as current_context to Xenova's analyze_and_decide
                         e2b_ocr_text = ""
                         if gridded_screenshot_path:
@@ -814,8 +814,8 @@ Analyze the provided gridded screenshot/description and output your next action.
             add_message("assistant", "Please configure your Mistral AI API key in the sidebar first.", "error")
             st.rerun()
             return
-        elif st.session_state.selected_ai_provider == "Xenova T5-Small" and not st.session_state.get('xenova_client'):
-            add_message("assistant", "Xenova T5-Small client not initialized. Please check the sidebar.", "error")
+        elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)" and not st.session_state.get('xenova_client'):
+            add_message("assistant", "Xenova (FLAN-T5 Base) client not initialized. Please check the sidebar.", "error")
             st.rerun()
             return
 
@@ -847,9 +847,9 @@ Analyze the provided gridded screenshot/description and output your next action.
                     return
                 generated_steps = st.session_state.mistral_client.generate_steps_for_todo(
                     user_prompt=user_input,
-                    model_name="pixtral-large-latest" # Consider making model configurable
+                    model_name="mistral-small-latest" # Changed from pixtral-large-latest for text generation
                 )
-            elif st.session_state.selected_ai_provider == "Xenova T5-Small":
+            elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
                 if not st.session_state.xenova_client:
                     add_message("assistant", "Xenova client not initialized. Cannot generate steps.", "error")
                     st.session_state.orchestrator_active = False
@@ -959,7 +959,7 @@ Analyze the provided gridded screenshot/description and output your next action.
                     response = st.session_state.mistral_client.analyze_and_decide(
                         image_data, current_task, model_name=action_decision_model_mistral, current_context=st.session_state.todo_objective
                     )
-                elif st.session_state.selected_ai_provider == "Xenova T5-Small":
+                elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
                     if not st.session_state.xenova_client:
                         add_message("assistant", "Xenova client not available for action decision.", "error")
                         st.session_state.orchestrator_active = False; st.rerun(); return
@@ -977,7 +977,7 @@ Analyze the provided gridded screenshot/description and output your next action.
                 thinking = response.get('thinking', 'No reasoning provided for action.')
                 action_str = response.get('action', '')
 
-                provider_tag = "Mistral-Small-Latest" if st.session_state.selected_ai_provider == "Mistral" else "Xenova T5-Small"
+                provider_tag = action_decision_model_mistral if st.session_state.selected_ai_provider == "Mistral" else "Xenova (FLAN-T5 Base)"
                 add_message("assistant", f"**Action Model ({provider_tag}) Reasoning:** {thinking}", "thinking")
 
                 if not action_str:
@@ -1039,7 +1039,7 @@ Analyze the provided gridded screenshot/description and output your next action.
                     analysis_result = st.session_state.mistral_client.analyze_state_vision(
                         image_data_after_action, current_task, st.session_state.todo_objective, model_name=vision_model_mistral
                     )
-                elif st.session_state.selected_ai_provider == "Xenova T5-Small":
+                elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
                     if not st.session_state.xenova_client:
                         add_message("assistant", "Xenova client not available for state analysis.", "error")
                         st.session_state.orchestrator_active = False; st.rerun(); return
@@ -1056,7 +1056,7 @@ Analyze the provided gridded screenshot/description and output your next action.
                     return
 
                 analysis_summary = analysis_result.get('summary', 'No analysis summary provided.')
-                provider_tag_vision = vision_model_mistral if st.session_state.selected_ai_provider == "Mistral" else "Xenova T5-Small"
+                provider_tag_vision = vision_model_mistral if st.session_state.selected_ai_provider == "Mistral" else "Xenova (FLAN-T5 Base)"
                 add_message("assistant", f"**State Analysis Model ({provider_tag_vision}) Summary:** {analysis_summary}", "info")
                 st.session_state.execution_summary.append({"task": current_task, "vision_analysis": analysis_result})
 
@@ -1112,9 +1112,9 @@ Analyze the provided gridded screenshot/description and output your next action.
                         with open(final_annotated_image_path, 'rb') as img_file:
                             final_image_data = base64.b64encode(img_file.read()).decode('utf-8')
                         final_analysis = st.session_state.mistral_client.analyze_state_vision(
-                            final_image_data, "Final objective verification", st.session_state.todo_objective, model_name="pixtral-12b-2409"
+                            final_image_data, "Final objective verification", st.session_state.todo_objective, model_name=vision_model_mistral # Using vision_model_mistral
                         )
-                    elif st.session_state.selected_ai_provider == "Xenova T5-Small":
+                    elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
                         if not st.session_state.xenova_client:
                             add_message("assistant", "Xenova client not available for final verification.", "error"); st.rerun(); return
                         final_analysis = st.session_state.xenova_client.analyze_state_vision(
@@ -1125,7 +1125,7 @@ Analyze the provided gridded screenshot/description and output your next action.
                         )
 
                     final_summary = final_analysis.get('summary', 'No final summary.')
-                    final_provider_tag = "Mistral" if st.session_state.selected_ai_provider == "Mistral" else "Xenova T5-Small"
+                    final_provider_tag = vision_model_mistral if st.session_state.selected_ai_provider == "Mistral" else "Xenova (FLAN-T5 Base)"
                     add_message("assistant", f"Final Check Summary ({final_provider_tag}): {final_summary}", "info")
 
                     if final_analysis.get("objective_completed"): # Relies on boolean from analyze_state_vision
