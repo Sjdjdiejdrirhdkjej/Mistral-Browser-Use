@@ -5,6 +5,7 @@ import base64
 from datetime import datetime
 from browser_automation import BrowserAutomation
 from mistral_client import MistralClient
+from ollama_client import OllamaClient
 from element_detector import ElementDetector
 import todo_manager # Added import
 import traceback
@@ -250,32 +251,88 @@ def initialize_session_state():
         st.session_state.e2b_api_key_input = ""
     if 'e2b_should_be_running' not in st.session_state:
         st.session_state.e2b_should_be_running = False
-    
+    # Ollama related session state
+    if 'ollama_client' not in st.session_state:
+        st.session_state.ollama_client = None
+    if 'selected_ai_provider' not in st.session_state:
+        st.session_state.selected_ai_provider = "Mistral" # Default to Mistral
+    if 'ollama_model_input' not in st.session_state:
+        st.session_state.ollama_model_input = "llama2" # Default model
+    if 'ollama_host_input' not in st.session_state:
+        st.session_state.ollama_host_input = "http://localhost:11434" # Default host
+    if 'ollama_connection_status' not in st.session_state:
+        st.session_state.ollama_connection_status = "Not Connected"
 
 def setup_sidebar():
     """Setup sidebar for API key configuration and controls"""
     st.sidebar.title("🔧 Configuration")
-    
-    # API Key Configuration
-    st.sidebar.subheader("Mistral AI API Key")
-    api_key = st.sidebar.text_input(
-        "API Key", 
-        value=os.getenv("MISTRAL_API_KEY", ""),
-        type="password",
-        help="Enter your Mistral AI API key"
+
+    # AI Provider Selection
+    st.sidebar.subheader("🤖 AI Provider")
+    st.session_state.selected_ai_provider = st.sidebar.selectbox(
+        "Choose AI Provider",
+        ["Mistral", "Ollama"],
+        index=["Mistral", "Ollama"].index(st.session_state.selected_ai_provider)
     )
-    
-    if api_key:
-        if st.session_state.mistral_client is None or st.session_state.mistral_client.api_key != api_key:
-            st.session_state.mistral_client = MistralClient(api_key)
-            st.sidebar.success("✅ API Key configured")
-    else:
-        st.sidebar.warning("⚠️ Please enter your Mistral AI API key")
-    
+    st.sidebar.divider()
+
+    if st.session_state.selected_ai_provider == "Mistral":
+        st.sidebar.subheader("Mistral AI API Key")
+        api_key = st.sidebar.text_input(
+            "API Key",
+            value=os.getenv("MISTRAL_API_KEY", ""),
+            type="password",
+            help="Enter your Mistral AI API key"
+        )
+        if api_key:
+            if st.session_state.mistral_client is None or st.session_state.mistral_client.api_key != api_key:
+                st.session_state.mistral_client = MistralClient(api_key)
+                st.sidebar.success("✅ API Key configured")
+        else:
+            st.sidebar.warning("⚠️ Please enter your Mistral AI API key")
+
+    elif st.session_state.selected_ai_provider == "Ollama":
+        st.sidebar.subheader("Ollama Configuration")
+        st.session_state.ollama_model_input = st.sidebar.text_input(
+            "Ollama Model",
+            value=st.session_state.ollama_model_input,
+            help="Specify the Ollama model to use (e.g., llama2, codellama)."
+        )
+        st.session_state.ollama_host_input = st.sidebar.text_input(
+            "Ollama Host URL",
+            value=st.session_state.ollama_host_input,
+            help="Specify the URL of your Ollama server (e.g., http://localhost:11434)."
+        )
+        if st.sidebar.button("Connect to Ollama"):
+            if not st.session_state.ollama_host_input or not st.session_state.ollama_model_input:
+                st.sidebar.error("Please provide both Ollama model and host URL.")
+                st.session_state.ollama_client = None
+                st.session_state.ollama_connection_status = "Error: Missing details"
+            else:
+                try:
+                    client = OllamaClient(
+                        model=st.session_state.ollama_model_input,
+                        host=st.session_state.ollama_host_input
+                    )
+                    if client.test_connection():
+                        st.session_state.ollama_client = client
+                        st.session_state.ollama_connection_status = f"✅ Connected to {st.session_state.ollama_model_input}"
+                        st.sidebar.success(st.session_state.ollama_connection_status)
+                    else:
+                        st.session_state.ollama_client = None
+                        st.session_state.ollama_connection_status = f"❌ Failed to connect to {st.session_state.ollama_host_input}"
+                        st.sidebar.error(st.session_state.ollama_connection_status)
+                except Exception as e:
+                    st.session_state.ollama_client = None
+                    st.session_state.ollama_connection_status = f"❌ Error: {str(e)}"
+                    st.sidebar.error(st.session_state.ollama_connection_status)
+        # Display current Ollama connection status
+        st.sidebar.write(f"Ollama Status: {st.session_state.ollama_connection_status}")
+
     st.sidebar.divider()
 
     # E2B Desktop Configuration
-    st.sidebar.subheader("E2B Desktop Configuration")
+    st.sidebar.subheader("☁️ E2B Desktop Configuration")
     st.session_state.e2b_api_key_input = st.sidebar.text_input(
         "E2B API Key",
         type="password",
@@ -371,10 +428,20 @@ def setup_sidebar():
             e2b_status_text = "🔴 Stopped"
         st.sidebar.write(f"E2B Session: {e2b_status_text}")
 
-    # Keep Mistral AI Status
-    if 'mistral_client' in st.session_state: 
-      api_status = "🟢 Connected" if st.session_state.mistral_client else "🔴 Not configured"
-      st.sidebar.write(f"Mistral AI: {api_status}")
+    # Keep Mistral AI Status (conditional)
+    if st.session_state.selected_ai_provider == "Mistral":
+        api_status = "🟢 Connected" if st.session_state.get('mistral_client') else "🔴 Not configured"
+        st.sidebar.write(f"Mistral AI: {api_status}")
+    elif st.session_state.selected_ai_provider == "Ollama":
+        # Display simpler status for Ollama based on connection_status
+        ollama_short_status = st.session_state.ollama_connection_status.split(' ')[0] # Gets "✅", "❌", "Not"
+        if ollama_short_status == "✅":
+             ollama_display_status = f"🟢 {st.session_state.ollama_connection_status}"
+        elif ollama_short_status == "❌":
+            ollama_display_status = f"🔴 {st.session_state.ollama_connection_status}"
+        else: # Not Connected or other statuses
+            ollama_display_status = f"⚪ {st.session_state.ollama_connection_status}"
+        st.sidebar.write(f"Ollama: {ollama_display_status}")
 
 def display_chat_history():
     """Display chat message history"""
@@ -616,63 +683,79 @@ def main():
 
         else: # E2B Automation step
             add_message("assistant", "E2B Automation: Taking screenshot...", "info")
-            # Ensure grid dimensions from session state are used if we want them to be configurable later.
-            # For now, gridify_image uses its own defaults (10x10) if not specified.
-            # The take_e2b_screenshot_and_display function internally calls gridify_image.
-            gridded_screenshot_path = take_e2b_screenshot_and_display() 
-            st.sidebar.info(f"DBG_RETURN_PATH: '{gridded_screenshot_path}'") # New debug message in sidebar
+            gridded_screenshot_path = take_e2b_screenshot_and_display()
+            st.sidebar.info(f"DBG_RETURN_PATH: '{gridded_screenshot_path}'")
 
             if not gridded_screenshot_path:
                 add_message("assistant", "E2B Automation: Failed to get screenshot. Cannot proceed.", "error")
                 st.session_state.e2b_automation_active = False
                 st.rerun()
-                # return
             else:
-                # Removed: add_message("assistant", "Debug: Screenshot successful, proceeding to AI prompt.", "info")
-                # Removed: add_message("assistant", "Debug: Preparing AI system prompt.", "info")
                 e2b_system_prompt = """
-You are an expert AI assistant tasked with automating a remote desktop environment based on user objectives. You will be provided with a user's objective and a gridded screenshot of the current desktop state. The screenshot is overlaid with a 10x10 grid (labeled A1-A10, B1-B10, ..., J1-J10 where letters are rows A-J and numbers are columns 1-10). Your goal is to determine the single next best action to perform on the desktop to achieve the objective.
+You are an expert AI assistant tasked with automating a remote desktop environment based on user objectives. You will be provided with a user's objective and a gridded screenshot of the current desktop state (or a textual description if vision is not available). The screenshot is overlaid with a 10x10 grid (labeled A1-A10, B1-B10, ..., J1-J10 where letters are rows A-J and numbers are columns 1-10). Your goal is to determine the single next best action to perform on the desktop to achieve the objective.
 
-Based on the visual information from the gridded screenshot and the overall objective, you must output ONE of the following actions in the specified format:
-1. CLICK(CELL_LABEL) - e.g., CLICK(D5)
-2. TYPE(TEXT_TO_TYPE) - e.g., TYPE(Hello, world!)
+Based on the visual information from the gridded screenshot (or textual description) and the overall objective, you must output ONE of the following actions in the specified format:
+1. CLICK(CELL_LABEL_OR_DESCRIPTOR) - e.g., CLICK(D5) or CLICK(the 'Submit' button)
+2. TYPE(TEXT_TO_TYPE) - e.g., TYPE(Hello, world!) or TYPE(user@example.com, into=the username field)
 3. SCROLL(DIRECTION) - DIRECTION must be UP, DOWN, LEFT, or RIGHT. e.g., SCROLL(DOWN)
 4. COMPLETE(SUMMARY_OF_COMPLETION) - e.g., COMPLETE(Objective achieved.)
 5. ERROR(REASON_FOR_ERROR) - e.g., ERROR(Cannot find button.)
 
 Current Objective: {objective}
 Previous Action (if any): {previous_action}
-Analyze the provided gridded screenshot and output your next action.
+Analyze the provided gridded screenshot/description and output your next action.
 """.format(objective=st.session_state.current_objective, previous_action=st.session_state.e2b_last_action or "None")
-
                 add_message("assistant", "E2B Automation: Thinking...", "info")
-                
+                ai_response_text = ""
+
                 try:
-                    image_data_for_ai = None
-                    with open(gridded_screenshot_path, 'rb') as img_file:
-                        image_data_for_ai = base64.b64encode(img_file.read()).decode('utf-8')
-                    
-                    if not st.session_state.mistral_client:
-                        add_message("assistant", "Mistral client not available for E2B automation.", "error")
-                        st.session_state.e2b_automation_active = False
-                        st.rerun()
-                        # return 
-                    
-                    else: # Mistral client is available
-                        multimodal_prompt = f"Objective: {st.session_state.current_objective}\nPrevious Action: {st.session_state.e2b_last_action or 'None'}\nAnalyze the screenshot and follow system instructions."
+                    if st.session_state.selected_ai_provider == "Mistral":
+                        if not st.session_state.mistral_client:
+                            add_message("assistant", "Mistral client not available for E2B automation.", "error")
+                            st.session_state.e2b_automation_active = False
+                            st.rerun()
+                            return # Added return
                         
-                        # Removed: add_message("assistant", "Debug: About to call Mistral client.", "info")
+                        image_data_for_ai = None
+                        with open(gridded_screenshot_path, 'rb') as img_file:
+                            image_data_for_ai = base64.b64encode(img_file.read()).decode('utf-8')
+
+                        multimodal_prompt = f"Objective: {st.session_state.current_objective}\nPrevious Action: {st.session_state.e2b_last_action or 'None'}\nAnalyze the screenshot and follow system instructions."
                         response_payload = st.session_state.mistral_client.analyze_and_decide(
                             image_b64=image_data_for_ai,
-                            user_prompt=multimodal_prompt, 
-                            model_name="pixtral-large-latest", 
-                            current_context=e2b_system_prompt 
+                            user_prompt=multimodal_prompt,
+                            model_name="pixtral-large-latest",
+                            current_context=e2b_system_prompt
                         )
                         ai_response_text = response_payload.get("action", "").strip() if isinstance(response_payload, dict) else str(response_payload).strip()
-                        # Removed: add_message("assistant", f"Debug: AI response received: '{ai_response_text}'", "info")
 
-                        if not ai_response_text:
-                            add_message("assistant", "E2B Automation: AI did not return an action.", "error")
+                    elif st.session_state.selected_ai_provider == "Ollama":
+                        if not st.session_state.ollama_client:
+                            add_message("assistant", "Ollama client not available for E2B automation.", "error")
+                            st.session_state.e2b_automation_active = False
+                            st.rerun()
+                            return # Added return
+
+                        # For Ollama, we'll provide a textual description of the gridded screenshot context
+                        # A more advanced implementation might try to OCR the screenshot or describe it in more detail.
+                        # For now, a generic message indicating a gridded view is available.
+                        e2b_screen_description_for_ollama = f"Current gridded view of the E2B desktop is available (cells A1-J10). Previous action: {st.session_state.e2b_last_action or 'None'}. User objective: {st.session_state.current_objective}. Refer to system context for action format."
+
+                        response_payload_ollama = st.session_state.ollama_client.analyze_and_decide(
+                            user_objective=f"Given the E2B desktop state (gridded view), and the overall objective '{st.session_state.current_objective}', determine the next action.",
+                            current_context=e2b_system_prompt, # Ollama's system prompt is inside the client method
+                            screen_description=e2b_screen_description_for_ollama
+                        )
+                        ai_response_text = response_payload_ollama.get("action", "").strip() if isinstance(response_payload_ollama, dict) else str(response_payload_ollama).strip()
+
+                    else:
+                        add_message("assistant", "No AI provider selected for E2B automation.", "error")
+                        st.session_state.e2b_automation_active = False
+                        st.rerun()
+                        return # Added return
+
+                    if not ai_response_text:
+                        add_message("assistant", "E2B Automation: AI did not return an action.", "error")
                             st.session_state.e2b_automation_active = False 
                         else:
                             add_message("assistant", f"E2B AI Action: {ai_response_text}", "info") # This one was already there
@@ -752,42 +835,64 @@ Analyze the provided gridded screenshot and output your next action.
             st.rerun()
             return 
         
-        # This check is now implicitly conditional: only runs if E2B is not active.
-        # No 'else' needed because the E2B active case returns early.
+        # Prerequisites check
+        if st.session_state.selected_ai_provider == "Mistral" and not st.session_state.get('mistral_client'):
+            add_message("assistant", "Please configure your Mistral AI API key in the sidebar first.", "error")
+            st.rerun()
+            return
+        elif st.session_state.selected_ai_provider == "Ollama" and not st.session_state.get('ollama_client'):
+            add_message("assistant", "Please connect to your Ollama client in the sidebar first.", "error")
+            st.rerun()
+            return
+
         if not st.session_state.get('automation_active'): # Check if browser automation is active
             add_message("assistant", "Browser session is not running. Please start it using 'Start Browser' in Session Controls if you want to automate web tasks.", "info")
             st.rerun()
             return
 
         st.session_state.current_objective = user_input
-        # New Orchestrator Logic
         st.session_state.orchestrator_active = True
-        st.session_state.automation_active = False # Disable old automation loop
-        st.session_state.current_task_index = 0 # Reset task index for new objective
-        st.session_state.execution_summary = [] # Reset summary
+        st.session_state.automation_active = False
+        st.session_state.current_task_index = 0
+        st.session_state.execution_summary = []
 
         add_message("assistant", f"Received new objective: {user_input}. Initializing orchestrator and planning steps...")
         
-        # Reset todo.md
         todo_manager.reset_todo_file(user_input)
         add_message("assistant", f"📝 `todo.md` reset for objective: {user_input}", "info")
 
         # Generate Steps
+        generated_steps = []
         try:
-            if not st.session_state.mistral_client:
-                add_message("assistant", "Mistral client not initialized. Cannot generate steps.", "error")
+            add_message("assistant", f"🧠 Generating steps using {st.session_state.selected_ai_provider}...", "info")
+            if st.session_state.selected_ai_provider == "Mistral":
+                if not st.session_state.mistral_client: # Should be caught by prerequisite check, but defensive
+                    add_message("assistant", "Mistral client not initialized. Cannot generate steps.", "error")
+                    st.session_state.orchestrator_active = False
+                    st.rerun()
+                    return
+                generated_steps = st.session_state.mistral_client.generate_steps_for_todo(
+                    user_prompt=user_input,
+                    model_name="pixtral-large-latest" # Consider making model configurable
+                )
+            elif st.session_state.selected_ai_provider == "Ollama":
+                if not st.session_state.ollama_client: # Should be caught by prerequisite check
+                    add_message("assistant", "Ollama client not connected. Please connect in the sidebar.", "error")
+                    st.session_state.orchestrator_active = False
+                    st.rerun()
+                    return
+                generated_steps = st.session_state.ollama_client.generate_steps_for_todo(
+                    user_prompt=user_input
+                    # model_name can be specified here if needed, defaults to client's model
+                )
+            else:
+                add_message("assistant", "No AI provider selected or configured for step generation.", "error")
                 st.session_state.orchestrator_active = False
                 st.rerun()
                 return
 
-            add_message("assistant", "🧠 Generating steps with pixtral-large-latest...", "info")
-            generated_steps = st.session_state.mistral_client.generate_steps_for_todo(
-                user_prompt=user_input,
-                model_name="pixtral-large-latest"
-            )
-
             if not generated_steps:
-                add_message("assistant", "⚠️ Failed to generate steps or no steps were returned. Please try rephrasing your objective.", "error")
+                add_message("assistant", f"⚠️ Failed to generate steps or no steps were returned using {st.session_state.selected_ai_provider}. Please try rephrasing your objective.", "error")
                 st.session_state.orchestrator_active = False
                 st.rerun()
                 return
@@ -855,26 +960,54 @@ Analyze the provided gridded screenshot and output your next action.
                 action_decision_model = "mistral-small-latest"
                 # For current_objective, pass the overall objective to give context to analyze_and_decide
                 response = st.session_state.mistral_client.analyze_and_decide(
-                    image_data, current_task, model_name=action_decision_model, current_context=st.session_state.todo_objective
+                    image_data, current_task, model_name=action_decision_model_mistral, current_context=st.session_state.todo_objective
                 )
-
-                thinking = response.get('thinking', 'No reasoning provided for action.')
-                action_str = response.get('action', '')
-                add_message("assistant", f"**Action Model (Mistral-Small-Latest) Reasoning:** {thinking}", "thinking")
-
-                if not action_str:
-                    add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")
-                    # Potentially increment a retry counter for the task or stop
-                    st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": "No action determined"})
-                    st.rerun() # Re-run, might try same task if index not incremented
+            elif st.session_state.selected_ai_provider == "Ollama":
+                if not st.session_state.ollama_client:
+                    add_message("assistant", "Ollama client not available for action decision.", "error")
+                    st.session_state.orchestrator_active = False
+                    st.rerun()
                     return
 
-                action_executed_successfully = execute_browser_action(action_str)
-                st.session_state.execution_summary.append({"task": current_task, "action": action_str, "executed": action_executed_successfully})
+                # For Ollama, since it can't "see" the image, we describe the situation.
+                # We pass the current task as the primary "user_objective" for this specific decision.
+                # The overall objective is passed as "current_context".
+                # The screen_description needs to be crafted. Since we just took a screenshot (annotated_image_path),
+                # we can state that visual info was captured but the model needs to rely on text.
+                # A more advanced version could try to extract text from the screenshot or elements if available.
+                screen_description_for_ollama = f"A screenshot has been taken and annotated with element indices. The current task is '{current_task}'. The overall objective is '{st.session_state.todo_objective}'. Based on this task and the objective, decide the next browser action. If the task implies visual confirmation (e.g., 'Verify X is visible'), and you cannot confirm from text, you might need to state that or suggest a different type of step if the action language allows."
+                if not annotated_image_path: # Fallback if screenshot failed
+                    screen_description_for_ollama = "No visual information available (screenshot failed). Base decision on task and objective."
 
-                if not action_executed_successfully and action_str.lower() not in ['complete', 'done']:
-                     add_message("assistant", f"Action '{action_str}' failed to execute properly. Will re-evaluate.", "error")
-                     # Re-run will happen, and the same task will be picked up. analyze_state_vision will assess new state.
+                response = st.session_state.ollama_client.analyze_and_decide(
+                    user_objective=current_task, # Current task is the immediate objective for this decision
+                    current_context=st.session_state.todo_objective, # Overall objective
+                    screen_description=screen_description_for_ollama
+                    # model_name can be specified here if desired for Ollama client
+                )
+            else:
+                add_message("assistant", "No AI provider selected for action decision.", "error")
+                st.session_state.orchestrator_active = False
+                st.rerun()
+                return
+
+            thinking = response.get('thinking', 'No reasoning provided for action.')
+            action_str = response.get('action', '')
+            # Display reasoning based on provider
+            provider_tag = "Mistral-Small-Latest" if st.session_state.selected_ai_provider == "Mistral" else st.session_state.ollama_client.model
+            add_message("assistant", f"**Action Model ({provider_tag}) Reasoning:** {thinking}", "thinking")
+
+            if not action_str:
+                add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")
+                st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": "No action determined"})
+                st.rerun()
+                return
+
+            action_executed_successfully = execute_browser_action(action_str)
+            st.session_state.execution_summary.append({"task": current_task, "action": action_str, "executed": action_executed_successfully})
+
+            if not action_executed_successfully and action_str.lower() not in ['complete', 'done']:
+                 add_message("assistant", f"Action '{action_str}' failed to execute properly. Will re-evaluate.", "error")
 
             except Exception as e:
                 add_message("assistant", f"Error during action execution phase: {str(e)}\n{traceback.format_exc()}", "error")
@@ -897,18 +1030,49 @@ Analyze the provided gridded screenshot and output your next action.
                 with open(annotated_image_path_after_action, 'rb') as img_file:
                     image_data_after_action = base64.b64encode(img_file.read()).decode('utf-8')
 
-                # Model for vision analysis: pixtral-12b-2409
-                vision_model = "pixtral-12b-2409"
-                analysis_result = st.session_state.mistral_client.analyze_state_vision(
-                    image_data_after_action, current_task, st.session_state.todo_objective, model_name=vision_model
-                )
+                # Model for vision analysis
+                vision_model_mistral = "pixtral-12b-2409"
+                analysis_result = {}
+
+                if st.session_state.selected_ai_provider == "Mistral":
+                    if not st.session_state.mistral_client:
+                        add_message("assistant", "Mistral client not available for state analysis.", "error")
+                        st.session_state.orchestrator_active = False
+                        st.rerun()
+                        return
+                    analysis_result = st.session_state.mistral_client.analyze_state_vision(
+                        image_data_after_action, current_task, st.session_state.todo_objective, model_name=vision_model_mistral
+                    )
+                elif st.session_state.selected_ai_provider == "Ollama":
+                    if not st.session_state.ollama_client:
+                        add_message("assistant", "Ollama client not available for state analysis.", "error")
+                        st.session_state.orchestrator_active = False
+                        st.rerun()
+                        return
+
+                    screen_description_for_ollama_vision = f"After an action, the current task is '{current_task}'. The overall objective is '{st.session_state.todo_objective}'. A new screen is available (screenshot taken) but cannot be visually processed by this model. Based on the task and objective, analyze the state (error, task_completed, objective_completed) and provide a summary."
+                    if not annotated_image_path_after_action: # Fallback if screenshot failed
+                         screen_description_for_ollama_vision = "No visual information available for state analysis (screenshot failed)."
+
+                    analysis_result = st.session_state.ollama_client.analyze_state_vision(
+                        current_task=current_task,
+                        objective=st.session_state.todo_objective,
+                        screen_description=screen_description_for_ollama_vision
+                        # model_name can be specified here for Ollama client
+                    )
+                else:
+                    add_message("assistant", "No AI provider selected for state analysis.", "error")
+                    st.session_state.orchestrator_active = False
+                    st.rerun()
+                    return
 
                 analysis_summary = analysis_result.get('summary', 'No analysis summary provided.')
-                add_message("assistant", f"**Vision Model (Pixtral-12B-2409) Analysis:** {analysis_summary}", "info")
+                provider_tag_vision = vision_model_mistral if st.session_state.selected_ai_provider == "Mistral" else st.session_state.ollama_client.model
+                add_message("assistant", f"**State Analysis Model ({provider_tag_vision}) Summary:** {analysis_summary}", "info")
                 st.session_state.execution_summary.append({"task": current_task, "vision_analysis": analysis_result})
 
                 # C. Decision Making
-                detected_error = analysis_result.get("error")
+                detected_error = analysis_result.get("error") # Ensure this is consistently string or None
                 task_completed = analysis_result.get("task_completed", False)
                 objective_completed = analysis_result.get("objective_completed", False)
 
@@ -942,12 +1106,26 @@ Analyze the provided gridded screenshot and output your next action.
                     with open(final_annotated_image_path, 'rb') as img_file:
                         final_image_data = base64.b64encode(img_file.read()).decode('utf-8')
 
-                    final_analysis = st.session_state.mistral_client.analyze_state_vision(
-                        final_image_data, "Final objective verification", st.session_state.todo_objective, model_name="pixtral-12b-2409" # Use updated vision model here too
-                    )
+                    final_analysis = {}
+                    if st.session_state.selected_ai_provider == "Mistral":
+                        final_analysis = st.session_state.mistral_client.analyze_state_vision(
+                            final_image_data, "Final objective verification", st.session_state.todo_objective, model_name="pixtral-12b-2409"
+                        )
+                    elif st.session_state.selected_ai_provider == "Ollama":
+                        final_screen_desc = "Final verification: A screenshot is available. Assess if the overall objective appears complete based on this and the objective text."
+                        if not final_annotated_image_path:
+                            final_screen_desc = "Final verification: No screenshot available. Assess based on objective text only."
+                        final_analysis = st.session_state.ollama_client.analyze_state_vision(
+                            current_task="Final objective verification",
+                            objective=st.session_state.todo_objective,
+                            screen_description=final_screen_desc
+                        )
+
                     final_summary = final_analysis.get('summary', 'No final summary.')
-                    add_message("assistant", f"Final Check Summary: {final_summary}", "info")
-                    if final_analysis.get("objective_completed"):
+                    final_provider_tag = "Mistral" if st.session_state.selected_ai_provider == "Mistral" else st.session_state.ollama_client.model
+                    add_message("assistant", f"Final Check Summary ({final_provider_tag}): {final_summary}", "info")
+
+                    if final_analysis.get("objective_completed"): # Relies on boolean from analyze_state_vision
                         add_message("assistant", "🎉 Final verification confirms objective completed!", "success")
                     else:
                         add_message("assistant", "⚠️ Final verification suggests the objective may not be fully met.", "error")
