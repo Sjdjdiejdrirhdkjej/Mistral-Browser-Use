@@ -91,7 +91,7 @@ You MUST respond ONLY with a valid JSON object. Do not include any text before o
 Example: {{"error": null, "task_completed": false, "objective_completed": false, "summary": "The login form is visible based on OCR text."}}
 """
         try:
-            generated_output = self.text_pipe(prompt, max_length=400, num_beams=5, early_stopping=True)
+            generated_output = self.text_pipe(prompt, max_length=400, num_beams=5, early_stopping=True, temperature=0.7)
             generated_text = generated_output[0]['generated_text']
 
             parsed_analysis = self._parse_json_from_text_pipe(generated_text, ["error", "task_completed", "objective_completed", "summary"])
@@ -134,7 +134,7 @@ You MUST respond ONLY with a valid JSON object. Do not include any text before o
 Example: {{"thinking": "The user wants to log in, OCR shows 'username' and 'password' fields. I should type username.", "action": "type('my_username', into='username field')"}}
 """
         try:
-            generated_output = self.text_pipe(prompt, max_length=400, num_beams=5, early_stopping=True)
+            generated_output = self.text_pipe(prompt, max_length=400, num_beams=5, early_stopping=True, temperature=0.7)
             generated_text = generated_output[0]['generated_text']
 
             parsed_decision = self._parse_json_from_text_pipe(generated_text, ["thinking", "action"])
