@@ -5,8 +5,9 @@ import base64
 from datetime import datetime
 from browser_automation import BrowserAutomation
 from mistral_client import MistralClient
-from xenova_client import XenovaClient # Added XenovaClient
+from xenova_client import XenovaClient
 from element_detector import ElementDetector
+from ocr_utils import extract_text_from_image # Added OCR utility
 # import ollama_manager # Removed ollama_manager
 import atexit # Keep atexit for other potential uses
 import todo_manager
@@ -701,10 +702,25 @@ Analyze the provided gridded screenshot/description and output your next action.
                             st.session_state.e2b_automation_active = False; st.rerun(); return
                         e2b_screen_description_for_xenova = f"E2B desktop gridded view (A1-J10). Prev action: {st.session_state.e2b_last_action or 'None'}. Objective: {st.session_state.current_objective}. Follow system context for action format."
                         # The e2b_system_prompt is already defined and passed as current_context to Xenova's analyze_and_decide
+                        e2b_ocr_text = ""
+                        if gridded_screenshot_path:
+                            add_message("assistant", f"🔍 E2B: Performing OCR on: {gridded_screenshot_path}...", "info")
+                            e2b_ocr_text = extract_text_from_image(gridded_screenshot_path)
+                            if e2b_ocr_text == "OCR_ERROR_TESSERACT_NOT_FOUND":
+                                add_message("assistant", "❌ E2B OCR Error: Tesseract not found.", "error")
+                            elif not e2b_ocr_text.strip():
+                                add_message("assistant", "ℹ️ E2B OCR: No text detected.", "info")
+                            else:
+                                e2b_ocr_summary = e2b_ocr_text[:150].replace('\n', ' ') + "..." if len(e2b_ocr_text) > 150 else e2b_ocr_text.replace('\n', ' ')
+                                add_message("assistant", f"📄 E2B OCR (snippet): \"{e2b_ocr_summary}\"", "info")
+                        else:
+                            add_message("assistant", "⚠️ E2B screenshot failed, skipping OCR.", "warning")
+
                         response_payload_xenova = st.session_state.xenova_client.analyze_and_decide(
                             user_objective=f"E2B: Given gridded desktop, objective '{st.session_state.current_objective}', determine next action.",
+                            ocr_text=e2b_ocr_text, # Pass OCR text
                             current_context=e2b_system_prompt, # Pass the detailed system prompt here
-                            screen_description=e2b_screen_description_for_xenova
+                            screen_description="Gridded view of E2B desktop is available visually." # Contextual, non-OCR info
                         )
                         ai_response_text = response_payload_xenova.get("action", "").strip() if isinstance(response_payload_xenova, dict) else str(response_payload_xenova).strip()
 
@@ -894,7 +910,24 @@ Analyze the provided gridded screenshot/description and output your next action.
             add_message("assistant", "🤔 Thinking on how to execute the current task...", "thinking")
             annotated_image_path = take_screenshot_and_analyze()
 
-            if not annotated_image_path:
+            ocr_text = ""
+            if annotated_image_path: # Ensure screenshot was taken
+                add_message("assistant", f"🔍 Performing OCR on screenshot: {annotated_image_path}...", "info")
+                ocr_text = extract_text_from_image(annotated_image_path)
+                if ocr_text == "OCR_ERROR_TESSERACT_NOT_FOUND":
+                    add_message("assistant", "❌ OCR Error: Tesseract engine not found. Please ensure it's installed and in PATH.", "error")
+                    # Optionally stop automation here if OCR is critical
+                    # st.session_state.orchestrator_active = False
+                    # st.rerun(); return
+                elif not ocr_text.strip():
+                    add_message("assistant", "ℹ️ OCR did not detect any text from the screenshot.", "info")
+                else:
+                    ocr_summary = ocr_text[:150].replace('\n', ' ') + "..." if len(ocr_text) > 150 else ocr_text.replace('\n', ' ')
+                    add_message("assistant", f"📄 OCR Result (snippet): \"{ocr_summary}\"", "info")
+            else:
+                add_message("assistant", "⚠️ Screenshot failed, skipping OCR.", "warning")
+
+            if not annotated_image_path: # Still check this, even if OCR was skipped.
                 add_message("assistant", "Failed to get screenshot for action decision. Stopping.", "error")
                 st.session_state.orchestrator_active = False
                 st.rerun()
@@ -924,14 +957,11 @@ Analyze the provided gridded screenshot/description and output your next action.
                     if not st.session_state.xenova_client:
                         add_message("assistant", "Xenova client not available for action decision.", "error")
                         st.session_state.orchestrator_active = False; st.rerun(); return
-                    # Prepare screen_description for XenovaClient (text-based)
-                    screen_description_for_xenova = f"Current task: '{current_task}'. Objective: '{st.session_state.todo_objective}'. Screen: Element indices available from annotated screenshot. Decide next browser action."
-                    if not annotated_image_path:
-                        screen_description_for_xenova = "No visual information available. Base decision on task and objective."
                     response = st.session_state.xenova_client.analyze_and_decide(
                         user_objective=current_task,
+                        ocr_text=ocr_text, # Pass OCR text here
                         current_context=st.session_state.todo_objective,
-                        screen_description=screen_description_for_xenova
+                        screen_description="Element indices from annotated screenshot are available visually." # Or other relevant non-OCR context
                     )
                 else:
                     add_message("assistant", "No AI provider selected for action decision.", "error")
@@ -966,16 +996,27 @@ Analyze the provided gridded screenshot/description and output your next action.
             time.sleep(1) # Brief pause for page to potentially update after action
             annotated_image_path_after_action = take_screenshot_and_analyze()
 
-            if not annotated_image_path_after_action:
+            ocr_text_after_action = ""
+            if annotated_image_path_after_action:
+                add_message("assistant", f"🔍 Performing OCR on screenshot after action: {annotated_image_path_after_action}...", "info")
+                ocr_text_after_action = extract_text_from_image(annotated_image_path_after_action)
+                if ocr_text_after_action == "OCR_ERROR_TESSERACT_NOT_FOUND":
+                    add_message("assistant", "❌ OCR Error: Tesseract engine not found for after-action screenshot.", "error")
+                elif not ocr_text_after_action.strip():
+                    add_message("assistant", "ℹ️ OCR did not detect any text from the after-action screenshot.", "info")
+                else:
+                    ocr_summary_after = ocr_text_after_action[:150].replace('\n', ' ') + "..." if len(ocr_text_after_action) > 150 else ocr_text_after_action.replace('\n', ' ')
+                    add_message("assistant", f"📄 OCR Result after action (snippet): \"{ocr_summary_after}\"", "info")
+            else:
+                add_message("assistant", "⚠️ Screenshot after action failed, skipping OCR.", "warning")
+
+            if not annotated_image_path_after_action: # Still check this
                 add_message("assistant", "Failed to get screenshot for state analysis. Stopping.", "error")
                 st.session_state.orchestrator_active = False
                 st.rerun()
                 return
             
             try:
-                with open(annotated_image_path_after_action, 'rb') as img_file:
-                    image_data_after_action = base64.b64encode(img_file.read()).decode('utf-8')
-
                 # Model for vision analysis
                 vision_model_mistral = "pixtral-12b-2409"
                 analysis_result = {}
@@ -986,6 +1027,9 @@ Analyze the provided gridded screenshot/description and output your next action.
                         st.session_state.orchestrator_active = False
                         st.rerun()
                         return
+                    # Mistral client still needs image data if it's used for vision analysis
+                    with open(annotated_image_path_after_action, 'rb') as img_file:
+                        image_data_after_action = base64.b64encode(img_file.read()).decode('utf-8')
                     analysis_result = st.session_state.mistral_client.analyze_state_vision(
                         image_data_after_action, current_task, st.session_state.todo_objective, model_name=vision_model_mistral
                     )
@@ -993,13 +1037,11 @@ Analyze the provided gridded screenshot/description and output your next action.
                     if not st.session_state.xenova_client:
                         add_message("assistant", "Xenova client not available for state analysis.", "error")
                         st.session_state.orchestrator_active = False; st.rerun(); return
-                    screen_description_for_xenova_vision = f"After action for task '{current_task}'. Objective: '{st.session_state.todo_objective}'. Screen: New screenshot taken. Analyze state."
-                    if not annotated_image_path_after_action:
-                         screen_description_for_xenova_vision = "No visual information for state analysis. Base analysis on task and objective."
                     analysis_result = st.session_state.xenova_client.analyze_state_vision(
                         current_task=current_task,
                         objective=st.session_state.todo_objective,
-                        screen_description=screen_description_for_xenova_vision
+                        ocr_text=ocr_text_after_action, # Pass OCR text here
+                        screen_description="Element indices from annotated screenshot are available visually." # Or other relevant non-OCR context
                     )
                 else:
                     add_message("assistant", "No AI provider selected for state analysis.", "error")
@@ -1042,26 +1084,38 @@ Analyze the provided gridded screenshot/description and output your next action.
             add_message("assistant", "✅ All tasks from todo.md have been processed. Performing final verification.", "info")
             # Perform a final vision analysis
             final_annotated_image_path = take_screenshot_and_analyze()
-            if final_annotated_image_path:
-                try:
-                    with open(final_annotated_image_path, 'rb') as img_file:
-                        final_image_data = base64.b64encode(img_file.read()).decode('utf-8')
 
+            final_ocr_text = ""
+            if final_annotated_image_path:
+                add_message("assistant", f"🔍 Performing OCR on final screenshot: {final_annotated_image_path}...", "info")
+                final_ocr_text = extract_text_from_image(final_annotated_image_path)
+                if final_ocr_text == "OCR_ERROR_TESSERACT_NOT_FOUND":
+                    add_message("assistant", "❌ OCR Error: Tesseract engine not found for final screenshot.", "error")
+                elif not final_ocr_text.strip():
+                    add_message("assistant", "ℹ️ OCR did not detect any text from the final screenshot.", "info")
+                else:
+                    ocr_summary_final = final_ocr_text[:150].replace('\n', ' ') + "..." if len(final_ocr_text) > 150 else final_ocr_text.replace('\n', ' ')
+                    add_message("assistant", f"📄 Final OCR Result (snippet): \"{ocr_summary_final}\"", "info")
+            else:
+                add_message("assistant", "⚠️ Final screenshot failed, skipping OCR.", "warning")
+
+            if final_annotated_image_path: # Mistral still needs image, Xenova needs OCR from it
+                try:
                     final_analysis = {}
                     if st.session_state.selected_ai_provider == "Mistral":
+                        with open(final_annotated_image_path, 'rb') as img_file:
+                            final_image_data = base64.b64encode(img_file.read()).decode('utf-8')
                         final_analysis = st.session_state.mistral_client.analyze_state_vision(
                             final_image_data, "Final objective verification", st.session_state.todo_objective, model_name="pixtral-12b-2409"
                         )
                     elif st.session_state.selected_ai_provider == "Xenova T5-Small":
-                        if not st.session_state.xenova_client: # Add check
+                        if not st.session_state.xenova_client:
                             add_message("assistant", "Xenova client not available for final verification.", "error"); st.rerun(); return
-                        final_screen_desc = "Final verification: Screenshot available. Assess if objective is complete."
-                        if not final_annotated_image_path:
-                            final_screen_desc = "Final verification: No screenshot. Assess based on objective text."
                         final_analysis = st.session_state.xenova_client.analyze_state_vision(
                             current_task="Final objective verification",
                             objective=st.session_state.todo_objective,
-                            screen_description=final_screen_desc
+                            ocr_text=final_ocr_text,
+                            screen_description="Element indices from annotated screenshot are available visually."
                         )
 
                     final_summary = final_analysis.get('summary', 'No final summary.')
