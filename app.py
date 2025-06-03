@@ -740,15 +740,15 @@ Analyze the provided gridded screenshot/description and output your next action.
                         # Display raw Xenova response if toggled
                         if st.session_state.get('show_raw_xenova_response', False):
                             if response_payload_xenova.get('raw_successful_json_str'):
-                                add_message("assistant", f"Successfully Parsed JSON (Xenova - E2B Action):
+                                add_message("assistant", f"""Successfully Parsed JSON (Xenova - E2B Action):
 ```json
 {response_payload_xenova['raw_successful_json_str']}
-```", "info")
+```""", "info")
                             elif response_payload_xenova.get('raw_ai_output'):
-                                add_message("assistant", f"Raw AI Output (Xenova - E2B Action Failure/Fallback):
+                                add_message("assistant", f"""Raw AI Output (Xenova - E2B Action Failure/Fallback):
 ```
 {response_payload_xenova['raw_ai_output']}
-```", "info")
+```""", "info")
 
                         ai_response_text = response_payload_xenova.get("action", "").strip() if isinstance(response_payload_xenova, dict) else str(response_payload_xenova).strip()
 
@@ -1004,15 +1004,15 @@ Analyze the provided gridded screenshot/description and output your next action.
 
                 if st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)" and st.session_state.get('show_raw_xenova_response', False):
                     if response.get('raw_successful_json_str'):
-                        add_message("assistant", f"Successfully Parsed JSON (Xenova - Action):
+                        add_message("assistant", f"""Successfully Parsed JSON (Xenova - Action):
 ```json
 {response['raw_successful_json_str']}
-```", "info")
+```""", "info")
                     elif response.get('raw_ai_output'):
-                        add_message("assistant", f"Raw AI Output (Xenova - Action Failure/Fallback):
+                        add_message("assistant", f"""Raw AI Output (Xenova - Action Failure/Fallback):
 ```
 {response['raw_ai_output']}
-```", "info")
+```""", "info")
 
                 if not action_str:
                     add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")
@@ -1095,15 +1095,15 @@ Analyze the provided gridded screenshot/description and output your next action.
 
                 if st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)" and st.session_state.get('show_raw_xenova_response', False):
                     if analysis_result.get('raw_successful_json_str'):
-                        add_message("assistant", f"Successfully Parsed JSON (Xenova - Vision):
+                        add_message("assistant", f"""Successfully Parsed JSON (Xenova - Vision):
 ```json
 {analysis_result['raw_successful_json_str']}
-```", "info")
+```""", "info")
                     elif analysis_result.get('raw_ai_output'):
-                        add_message("assistant", f"Raw AI Output (Xenova - Vision Failure):
+                        add_message("assistant", f"""Raw AI Output (Xenova - Vision Failure):
 ```
 {analysis_result['raw_ai_output']}
-```", "info")
+```""", "info")
 
                 st.session_state.execution_summary.append({"task": current_task, "vision_analysis": analysis_result})
 
@@ -1177,15 +1177,15 @@ Analyze the provided gridded screenshot/description and output your next action.
 
                     if st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)" and st.session_state.get('show_raw_xenova_response', False):
                         if final_analysis.get('raw_successful_json_str'):
-                            add_message("assistant", f"Successfully Parsed JSON (Xenova - Final Verification):
+                            add_message("assistant", f"""Successfully Parsed JSON (Xenova - Final Verification):
 ```json
 {final_analysis['raw_successful_json_str']}
-```", "info")
+```""", "info")
                         elif final_analysis.get('raw_ai_output'):
-                            add_message("assistant", f"Raw AI Output (Xenova - Final Verification Failure):
+                            add_message("assistant", f"""Raw AI Output (Xenova - Final Verification Failure):
 ```
 {final_analysis['raw_ai_output']}
-```", "info")
+```""", "info")
 
                     if final_analysis.get("objective_completed"): # Relies on boolean from analyze_state_vision
                         add_message("assistant", "🎉 Final verification confirms objective completed!", "success")
