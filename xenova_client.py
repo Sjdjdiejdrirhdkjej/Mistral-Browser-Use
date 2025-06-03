@@ -12,11 +12,13 @@ class XenovaClient:
             print(f"Error initializing Xenova text generation pipeline: {e}")
             # self.text_pipe remains None
 
-    def _parse_json_from_text_pipe(self, generated_text: str, expected_keys: list) -> dict:
+    def _parse_json_from_text_pipe(self, generated_text: str, expected_keys: list) -> tuple[dict | None, str]:
         """
         Helper function to parse JSON from the text pipeline's output.
         Uses regex to find a JSON-like string and then attempts to parse it.
+        Returns a tuple: (parsed_json_dict_or_None, raw_json_string_or_original_text_snippet)
         """
+        json_str = "" # Initialize json_str
         try:
             # Use regex to find a string that looks like a JSON object
             match = re.search(r'\{.*\}', generated_text, re.DOTALL)
@@ -29,19 +31,20 @@ class XenovaClient:
                 parsed_json = json.loads(json_str)
 
                 if all(key in parsed_json for key in expected_keys):
-                    return parsed_json
+                    return parsed_json, json_str
                 else:
                     print(f"Error: Missing one or more expected keys ({expected_keys}) in parsed JSON: {json_str}")
-                    return None # Indicates parsing succeeded but content is invalid
+                    return None, json_str # Return the string it tried to parse
             else:
                 print(f"Error: No valid JSON object found using regex in AI response: {generated_text}")
-                return None # Indicates no JSON found
+                return None, generated_text[:500] # Return a snippet of the original text
         except json.JSONDecodeError as je:
-            print(f"Error decoding JSON from AI response (after regex extraction): {je}. Extracted string was: {json_str if 'json_str' in locals() else 'N/A'}. Original response: {generated_text}")
-            return None # Indicates JSON decoding error
+            print(f"Error decoding JSON from AI response (after regex extraction): {je}. Extracted string was: {json_str}. Original response: {generated_text}")
+            return None, json_str # Return the string it failed to decode
         except Exception as e:
             print(f"An unexpected error occurred during JSON parsing: {e}")
-            return None
+            # If json_str was populated, return it, otherwise a snippet of the original text
+            return None, json_str if json_str else generated_text[:500]
 
     def generate_steps_for_todo(self, user_prompt: str) -> list[str]:
         if not self.text_pipe:
@@ -94,7 +97,7 @@ Example: {{"error": null, "task_completed": false, "objective_completed": false,
             generated_output = self.text_pipe(prompt, max_length=400, num_beams=5, early_stopping=True, temperature=0.7)
             generated_text = generated_output[0]['generated_text']
 
-            parsed_analysis = self._parse_json_from_text_pipe(generated_text, ["error", "task_completed", "objective_completed", "summary"])
+            parsed_analysis, raw_text_from_parser = self._parse_json_from_text_pipe(generated_text, ["error", "task_completed", "objective_completed", "summary"])
 
             if parsed_analysis:
                 # Ensure boolean conversion for task_completed and objective_completed
@@ -105,12 +108,13 @@ Example: {{"error": null, "task_completed": false, "objective_completed": false,
                 if isinstance(parsed_analysis.get("error"), str) and parsed_analysis["error"].lower() == "null":
                     parsed_analysis["error"] = None
 
+                parsed_analysis['raw_successful_json_str'] = raw_text_from_parser
                 return parsed_analysis
             else:
                 # _parse_json_from_text_pipe already printed an error
                 error_response = default_error_response.copy()
                 error_response["summary"] = "AI response was not valid JSON or missed keys. See raw_ai_output."
-                error_response["raw_ai_output"] = generated_text[:500] # Include raw output
+                error_response["raw_ai_output"] = raw_text_from_parser # Use text from parser
                 return error_response
 
         except Exception as e:
@@ -137,42 +141,42 @@ Example: {{"thinking": "The user wants to log in, OCR shows 'username' and 'pass
             generated_output = self.text_pipe(prompt, max_length=400, num_beams=5, early_stopping=True, temperature=0.7)
             generated_text = generated_output[0]['generated_text']
 
-            parsed_decision = self._parse_json_from_text_pipe(generated_text, ["thinking", "action"])
+            parsed_decision, raw_text_from_parser = self._parse_json_from_text_pipe(generated_text, ["thinking", "action"])
 
             if parsed_decision:
+                parsed_decision['raw_successful_json_str'] = raw_text_from_parser
                 return parsed_decision
             else:
-                # Fallback: try to extract action and thinking using regex if JSON parsing completely fails
-                # This is a last resort and indicates issues with the model's JSON generation.
-                print(f"Warning: JSON parsing failed for decision. Attempting regex fallback. AI Response: {generated_text[:200]}...")
+                # _parse_json_from_text_pipe failed, raw_text_from_parser contains the string it tried or a snippet
+                print(f"Warning: JSON parsing failed for decision. Raw text from parser: {raw_text_from_parser[:200]}... Attempting regex fallback on full generated_text.")
+                # Fallback: try to extract action and thinking using regex from the original generated_text
                 try:
                     thinking_match = re.search(r'"thinking":\s*"([^"]*)"', generated_text, re.IGNORECASE | re.DOTALL)
                     action_match = re.search(r'"action":\s*"([^"]*)"', generated_text, re.IGNORECASE | re.DOTALL)
 
-                    thinking = thinking_match.group(1).strip() if thinking_match else "Could not extract thinking (JSON parse failed)."
-                    action = action_match.group(1).strip() if action_match else "ERROR('Could not extract action (JSON parse failed)')"
+                    thinking = thinking_match.group(1).strip() if thinking_match else "Could not extract thinking (JSON parse failed, fallback attempted)."
+                    action = action_match.group(1).strip() if action_match else "ERROR('Could not extract action (JSON parse failed, fallback attempted)')"
 
-                    if action != "ERROR('Could not extract action (JSON parse failed)')":
-                         print("Regex fallback successfully extracted action/thinking.")
-                         return {"thinking": thinking, "action": action}
+                    if action != "ERROR('Could not extract action (JSON parse failed, fallback attempted)')":
+                         print("Regex fallback successfully extracted action/thinking from full generated_text.")
+                         return {"thinking": thinking, "action": action, "raw_ai_output": generated_text[:500]}
                     else:
-                        print("Regex fallback also failed to extract required fields.")
+                        print("Regex fallback also failed to extract required fields from full generated_text.")
                         error_response = default_error_response.copy()
                         error_response["thinking"] = "AI response was not valid JSON and fallbacks failed. See raw_ai_output."
-                        error_response["raw_ai_output"] = generated_text[:500] # Include raw output
+                        error_response["raw_ai_output"] = generated_text[:500] # Full original text
                         return error_response
                 except Exception as fallback_e:
                     print(f"Error during regex fallback extraction: {fallback_e}")
                     error_response = default_error_response.copy()
                     error_response["thinking"] = f"AI response was not valid JSON, regex fallback failed: {fallback_e}. See raw_ai_output."
-                    error_response["raw_ai_output"] = generated_text[:500] # Include raw output
+                    error_response["raw_ai_output"] = generated_text[:500] # Full original text
                     return error_response
 
         except Exception as e:
             print(f"Error in analyze_and_decide with text_pipe: {e}")
             error_response = default_error_response.copy()
             error_response["thinking"] = f"Exception during AI call: {str(e)}. See raw_ai_output."
-            # It's possible generated_text is not defined here if error is before AI call
             error_response["raw_ai_output"] = generated_text[:500] if 'generated_text' in locals() else "N/A"
             return error_response
 

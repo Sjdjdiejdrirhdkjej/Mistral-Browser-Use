@@ -265,6 +265,8 @@ def initialize_session_state():
         st.session_state.e2b_grid_cols = 10
     if 'e2b_last_action' not in st.session_state:
         st.session_state.e2b_last_action = None
+    if 'show_raw_xenova_response' not in st.session_state:
+        st.session_state.show_raw_xenova_response = False
 
 def setup_sidebar():
     """Setup sidebar for API key configuration and controls"""
@@ -308,6 +310,13 @@ def setup_sidebar():
             st.sidebar.success("✅ Xenova (FLAN-T5 Base) client ready.")
         else: # Should not happen if logic is correct, but as a fallback
             st.sidebar.error("❌ Xenova (FLAN-T5 Base) client not initialized. Try re-selecting.")
+
+        # Add checkbox for showing raw Xenova response
+        st.session_state.show_raw_xenova_response = st.sidebar.checkbox(
+            "Show Raw AI Response (Xenova)",
+            key="show_raw_xenova_response_checkbox",
+            value=st.session_state.get("show_raw_xenova_response", False)
+        )
 
     st.sidebar.divider()
 
@@ -728,6 +737,19 @@ Analyze the provided gridded screenshot/description and output your next action.
                             current_context=e2b_system_prompt, # Pass the detailed system prompt here
                             screen_description="Gridded view of E2B desktop is available visually." # Contextual, non-OCR info
                         )
+                        # Display raw Xenova response if toggled
+                        if st.session_state.get('show_raw_xenova_response', False):
+                            if response_payload_xenova.get('raw_successful_json_str'):
+                                add_message("assistant", f"Successfully Parsed JSON (Xenova - E2B Action):
+```json
+{response_payload_xenova['raw_successful_json_str']}
+```", "info")
+                            elif response_payload_xenova.get('raw_ai_output'):
+                                add_message("assistant", f"Raw AI Output (Xenova - E2B Action Failure/Fallback):
+```
+{response_payload_xenova['raw_ai_output']}
+```", "info")
+
                         ai_response_text = response_payload_xenova.get("action", "").strip() if isinstance(response_payload_xenova, dict) else str(response_payload_xenova).strip()
 
                     else:
@@ -980,6 +1002,18 @@ Analyze the provided gridded screenshot/description and output your next action.
                 provider_tag = action_decision_model_mistral if st.session_state.selected_ai_provider == "Mistral" else "Xenova (FLAN-T5 Base)"
                 add_message("assistant", f"**Action Model ({provider_tag}) Reasoning:** {thinking}", "thinking")
 
+                if st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)" and st.session_state.get('show_raw_xenova_response', False):
+                    if response.get('raw_successful_json_str'):
+                        add_message("assistant", f"Successfully Parsed JSON (Xenova - Action):
+```json
+{response['raw_successful_json_str']}
+```", "info")
+                    elif response.get('raw_ai_output'):
+                        add_message("assistant", f"Raw AI Output (Xenova - Action Failure/Fallback):
+```
+{response['raw_ai_output']}
+```", "info")
+
                 if not action_str:
                     add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")
                     st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": "No action determined"})
@@ -1058,6 +1092,19 @@ Analyze the provided gridded screenshot/description and output your next action.
                 analysis_summary = analysis_result.get('summary', 'No analysis summary provided.')
                 provider_tag_vision = vision_model_mistral if st.session_state.selected_ai_provider == "Mistral" else "Xenova (FLAN-T5 Base)"
                 add_message("assistant", f"**State Analysis Model ({provider_tag_vision}) Summary:** {analysis_summary}", "info")
+
+                if st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)" and st.session_state.get('show_raw_xenova_response', False):
+                    if analysis_result.get('raw_successful_json_str'):
+                        add_message("assistant", f"Successfully Parsed JSON (Xenova - Vision):
+```json
+{analysis_result['raw_successful_json_str']}
+```", "info")
+                    elif analysis_result.get('raw_ai_output'):
+                        add_message("assistant", f"Raw AI Output (Xenova - Vision Failure):
+```
+{analysis_result['raw_ai_output']}
+```", "info")
+
                 st.session_state.execution_summary.append({"task": current_task, "vision_analysis": analysis_result})
 
                 # C. Decision Making
@@ -1127,6 +1174,18 @@ Analyze the provided gridded screenshot/description and output your next action.
                     final_summary = final_analysis.get('summary', 'No final summary.')
                     final_provider_tag = vision_model_mistral if st.session_state.selected_ai_provider == "Mistral" else "Xenova (FLAN-T5 Base)"
                     add_message("assistant", f"Final Check Summary ({final_provider_tag}): {final_summary}", "info")
+
+                    if st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)" and st.session_state.get('show_raw_xenova_response', False):
+                        if final_analysis.get('raw_successful_json_str'):
+                            add_message("assistant", f"Successfully Parsed JSON (Xenova - Final Verification):
+```json
+{final_analysis['raw_successful_json_str']}
+```", "info")
+                        elif final_analysis.get('raw_ai_output'):
+                            add_message("assistant", f"Raw AI Output (Xenova - Final Verification Failure):
+```
+{final_analysis['raw_ai_output']}
+```", "info")
 
                     if final_analysis.get("objective_completed"): # Relies on boolean from analyze_state_vision
                         add_message("assistant", "🎉 Final verification confirms objective completed!", "success")
