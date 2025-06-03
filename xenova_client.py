@@ -90,11 +90,24 @@ Overall Objective: {objective}
 Text from Screen (OCR): {ocr_text if ocr_text else "No text extracted from screen."}
 Additional Context/Screen Description: {screen_description if screen_description else "None"}
 
-You MUST respond ONLY with a valid JSON object. Do not include any text before or after the JSON. The JSON object must have the following keys: "error" (string or null for no error), "task_completed" (boolean), "objective_completed" (boolean), and "summary" (string, your reasoning for the status).
-Example: {{"error": null, "task_completed": false, "objective_completed": false, "summary": "The login form is visible based on OCR text."}}
+Your entire response MUST be a single, valid JSON object starting with '{{' and ending with '}}' and nothing else. Do not include any text before or after the JSON. The JSON object must have the following keys: "error" (string or null for no error), "task_completed" (boolean), "objective_completed" (boolean), and "summary" (string, your reasoning for the status).
+
+Here are some examples of valid JSON responses:
+
+Example 1 (Task ongoing):
+{{"error": null, "task_completed": false, "objective_completed": false, "summary": "The login form is visible and the username field has been filled. Still need to input password."}}
+
+Example 2 (Task completed, objective ongoing):
+{{"error": null, "task_completed": true, "objective_completed": false, "summary": "User has successfully logged in. The main dashboard is now visible. Ready for next task towards the main objective."}}
+
+Example 3 (Objective completed):
+{{"error": null, "task_completed": true, "objective_completed": true, "summary": "The requested article has been found and its title is visible on the page. Objective achieved."}}
+
+Example 4 (Error found on page):
+{{"error": "Page load failed with a 404 error.", "task_completed": false, "objective_completed": false, "summary": "The attempt to navigate to the contact page resulted in a 404 error."}}
 """
         try:
-            generated_output = self.text_pipe(prompt, max_length=400, num_beams=5, early_stopping=True, temperature=0.7)
+            generated_output = self.text_pipe(prompt, max_length=550, num_beams=5, early_stopping=True, temperature=0.7) # Increased max_length
             generated_text = generated_output[0]['generated_text']
 
             parsed_analysis, raw_text_from_parser = self._parse_json_from_text_pipe(generated_text, ["error", "task_completed", "objective_completed", "summary"])
