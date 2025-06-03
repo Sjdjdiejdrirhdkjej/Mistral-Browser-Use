@@ -134,11 +134,24 @@ Overall Goal: {current_context if current_context else "Not specified."}
 Text from Screen (OCR): {ocr_text if ocr_text else "No text extracted from screen."}
 Additional Context/Screen Description: {screen_description if screen_description else "None"}
 
-You MUST respond ONLY with a valid JSON object. Do not include any text before or after the JSON. The JSON object must have the keys: "thinking" (your reasoning) and "action" (the command to execute, e.g., click('button_id'), type('text', into='field_name'), complete(), error('reason')).
-Example: {{"thinking": "The user wants to log in, OCR shows 'username' and 'password' fields. I should type username.", "action": "type('my_username', into='username field')"}}
+Your entire response MUST be a single, valid JSON object starting with '{{' and ending with '}}' and nothing else. Do not include any text before or after the JSON. The JSON object must have the keys: "thinking" (your reasoning) and "action" (the command to execute, e.g., click('button_id'), type('text', into='field_name'), complete(), error('reason')).
+
+Here are some examples of valid JSON responses:
+
+Example 1 (Typing into a field):
+{{"thinking": "The user wants to enter their name. The 'Full Name' field is visible.", "action": "type('John Doe', into='Full Name field')"}}
+
+Example 2 (Clicking a button):
+{{"thinking": "The form is complete. I need to click the 'Submit' button to proceed.", "action": "click('Submit button')"}}
+
+Example 3 (Completing an objective):
+{{"thinking": "The confirmation message 'Order successful' is visible. The user's objective to place an order is complete.", "action": "complete('Order successfully placed.')"}}
+
+Example 4 (Navigating to a URL):
+{{"thinking": "The user wants to go to the homepage. I should navigate to the main site URL.", "action": "navigate_to('https://example.com')"}}
 """
         try:
-            generated_output = self.text_pipe(prompt, max_length=400, num_beams=5, early_stopping=True, temperature=0.7)
+            generated_output = self.text_pipe(prompt, max_length=500, num_beams=5, early_stopping=True, temperature=0.7) # Increased max_length for longer prompt
             generated_text = generated_output[0]['generated_text']
 
             parsed_decision, raw_text_from_parser = self._parse_json_from_text_pipe(generated_text, ["thinking", "action"])
