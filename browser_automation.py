@@ -1,4 +1,5 @@
 import os
+import shutil # Added shutil
 import subprocess
 import time
 from datetime import datetime
@@ -22,33 +23,37 @@ class BrowserAutomation:
         self.element_map = {}  # Maps indexes to elements
         
     def find_firefox_binary(self):
-        """Find Firefox binary path using subprocess"""
-        possible_paths = [
+        """Find Firefox binary path more robustly."""
+        # Common absolute paths for Linux/macOS. Add Windows paths if necessary.
+        # For Windows, typical paths might be:
+        # r"C:\Program Files\Mozilla Firefox\firefox.exe"
+        # r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe"
+        # r"C:\Users\{username}\AppData\Local\Mozilla Firefox\firefox.exe"
+        # (username would need to be determined or iterated)
+
+        possible_abs_paths = [
             '/usr/bin/firefox',
             '/usr/local/bin/firefox',
-            '/opt/firefox/firefox',
-            '/snap/bin/firefox',
-            'firefox'  # In PATH
+            '/opt/firefox/firefox', # Common for manual installs
+            '/snap/bin/firefox',    # For Snap package
+            '/Applications/Firefox.app/Contents/MacOS/firefox' # macOS
         ]
         
-        for path in possible_paths:
-            try:
-                result = subprocess.run(['which', path], capture_output=True, text=True)
-                if result.returncode == 0:
-                    return result.stdout.strip()
-            except:
-                continue
+        for path in possible_abs_paths:
+            if os.path.exists(path) and os.access(path, os.X_OK):
+                print(f"Found Firefox binary at: {path}")
+                return path
+
+        # Fallback to shutil.which for executables in PATH
+        # This covers 'firefox', 'firefox.exe' (on Windows), 'firefox-esr' etc.
+        for cmd in ['firefox', 'firefox-esr']:
+            found_path = shutil.which(cmd)
+            if found_path:
+                print(f"Found Firefox binary using shutil.which({cmd}): {found_path}")
+                return found_path
         
-        # Try using 'which' command
-        try:
-            result = subprocess.run(['which', 'firefox'], capture_output=True, text=True)
-            if result.returncode == 0:
-                return result.stdout.strip()
-        except:
-            pass
-        
-        raise Exception("Firefox binary not found. Please install Firefox.")
-    
+        raise Exception("Firefox binary not found. Please ensure Firefox is installed and in your PATH, or specify its location.")
+
     def start_browser(self):
         """Start Firefox browser, configured for headless operation."""
         try:

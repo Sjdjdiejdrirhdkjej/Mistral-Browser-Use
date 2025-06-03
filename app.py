@@ -259,6 +259,12 @@ def initialize_session_state():
         st.session_state.selected_ai_provider = "Mistral" # Default to Mistral
     if 'xenova_client' not in st.session_state: # Added for Xenova
         st.session_state.xenova_client = None
+    if 'e2b_grid_rows' not in st.session_state:
+        st.session_state.e2b_grid_rows = 10
+    if 'e2b_grid_cols' not in st.session_state:
+        st.session_state.e2b_grid_cols = 10
+    if 'e2b_last_action' not in st.session_state:
+        st.session_state.e2b_last_action = None
 
 def setup_sidebar():
     """Setup sidebar for API key configuration and controls"""
