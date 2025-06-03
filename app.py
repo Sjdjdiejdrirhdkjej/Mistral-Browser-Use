@@ -949,68 +949,69 @@ Analyze the provided gridded screenshot/description and output your next action.
                 st.rerun()
                 return
 
-            try:
-                with open(annotated_image_path, 'rb') as img_file:
-                    image_data = base64.b64encode(img_file.read()).decode('utf-8')
+            # Initialize response and other variables before the try block
+            response = {}
+            thinking = "No reasoning provided by AI."
+            action_str = ""
+            action_executed_successfully = False
 
-                # Model for determining browser actions: mistral-small-latest
-                action_decision_model = "mistral-small-latest"
-                # For current_objective, pass the overall objective to give context to analyze_and_decide
-                response = st.session_state.mistral_client.analyze_and_decide(
-                    image_data, current_task, model_name=action_decision_model_mistral, current_context=st.session_state.todo_objective
-                )
-            elif st.session_state.selected_ai_provider == "Ollama":
-                if not st.session_state.ollama_client:
-                    add_message("assistant", "Ollama client not available for action decision.", "error")
+            try: # This try now covers the entire provider selection and response processing
+                if st.session_state.selected_ai_provider == "Mistral":
+                    if not st.session_state.mistral_client:
+                        add_message("assistant", "Mistral client not available for action decision.", "error")
+                        st.session_state.orchestrator_active = False
+                        st.rerun(); return
+
+                    with open(annotated_image_path, 'rb') as img_file:
+                        image_data = base64.b64encode(img_file.read()).decode('utf-8')
+
+                    action_decision_model_mistral = "mistral-small-latest"
+                    response = st.session_state.mistral_client.analyze_and_decide(
+                        image_data, current_task, model_name=action_decision_model_mistral, current_context=st.session_state.todo_objective
+                    )
+
+                elif st.session_state.selected_ai_provider == "Ollama":
+                    if not st.session_state.ollama_client:
+                        add_message("assistant", "Ollama client not available for action decision.", "error")
+                        st.session_state.orchestrator_active = False
+                        st.rerun(); return
+
+                    screen_description_for_ollama = f"A screenshot has been taken and annotated with element indices. The current task is '{current_task}'. The overall objective is '{st.session_state.todo_objective}'. Based on this task and the objective, decide the next browser action. If the task implies visual confirmation (e.g., 'Verify X is visible'), and you cannot confirm from text, you might need to state that or suggest a different type of step if the action language allows."
+                    if not annotated_image_path: # Fallback if screenshot failed
+                        screen_description_for_ollama = "No visual information available (screenshot failed). Base decision on task and objective."
+
+                    response = st.session_state.ollama_client.analyze_and_decide(
+                        user_objective=current_task,
+                        current_context=st.session_state.todo_objective,
+                        screen_description=screen_description_for_ollama
+                    )
+                else:
+                    add_message("assistant", "No AI provider selected for action decision.", "error")
                     st.session_state.orchestrator_active = False
-                    st.rerun()
-                    return
+                    st.rerun(); return
 
-                # For Ollama, since it can't "see" the image, we describe the situation.
-                # We pass the current task as the primary "user_objective" for this specific decision.
-                # The overall objective is passed as "current_context".
-                # The screen_description needs to be crafted. Since we just took a screenshot (annotated_image_path),
-                # we can state that visual info was captured but the model needs to rely on text.
-                # A more advanced version could try to extract text from the screenshot or elements if available.
-                screen_description_for_ollama = f"A screenshot has been taken and annotated with element indices. The current task is '{current_task}'. The overall objective is '{st.session_state.todo_objective}'. Based on this task and the objective, decide the next browser action. If the task implies visual confirmation (e.g., 'Verify X is visible'), and you cannot confirm from text, you might need to state that or suggest a different type of step if the action language allows."
-                if not annotated_image_path: # Fallback if screenshot failed
-                    screen_description_for_ollama = "No visual information available (screenshot failed). Base decision on task and objective."
+                thinking = response.get('thinking', 'No reasoning provided for action.')
+                action_str = response.get('action', '')
 
-                response = st.session_state.ollama_client.analyze_and_decide(
-                    user_objective=current_task, # Current task is the immediate objective for this decision
-                    current_context=st.session_state.todo_objective, # Overall objective
-                    screen_description=screen_description_for_ollama
-                    # model_name can be specified here if desired for Ollama client
-                )
-            else:
-                add_message("assistant", "No AI provider selected for action decision.", "error")
-                st.session_state.orchestrator_active = False
-                st.rerun()
-                return
+                provider_tag = "Mistral-Small-Latest" if st.session_state.selected_ai_provider == "Mistral" else st.session_state.ollama_client.model
+                add_message("assistant", f"**Action Model ({provider_tag}) Reasoning:** {thinking}", "thinking")
 
-            thinking = response.get('thinking', 'No reasoning provided for action.')
-            action_str = response.get('action', '')
-            # Display reasoning based on provider
-            provider_tag = "Mistral-Small-Latest" if st.session_state.selected_ai_provider == "Mistral" else st.session_state.ollama_client.model
-            add_message("assistant", f"**Action Model ({provider_tag}) Reasoning:** {thinking}", "thinking")
+                if not action_str:
+                    add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")
+                    st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": "No action determined"})
+                    st.rerun(); return
 
-            if not action_str:
-                add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")
-                st.session_state.execution_summary.append({"task": current_task, "action_model_response": response, "status": "No action determined"})
-                st.rerun()
-                return
+                action_executed_successfully = execute_browser_action(action_str)
+                st.session_state.execution_summary.append({"task": current_task, "action": action_str, "executed": action_executed_successfully})
 
-            action_executed_successfully = execute_browser_action(action_str)
-            st.session_state.execution_summary.append({"task": current_task, "action": action_str, "executed": action_executed_successfully})
-
-            if not action_executed_successfully and action_str.lower() not in ['complete', 'done']:
-                 add_message("assistant", f"Action '{action_str}' failed to execute properly. Will re-evaluate.", "error")
+                if not action_executed_successfully and action_str.lower() not in ['complete', 'done']:
+                     add_message("assistant", f"Action '{action_str}' failed to execute properly. Will re-evaluate.", "error")
 
             except Exception as e:
                 add_message("assistant", f"Error during action execution phase: {str(e)}\n{traceback.format_exc()}", "error")
                 st.session_state.orchestrator_active = False
-                st.rerun()
-                return
+                # st.rerun() # Removed, as the main loop's logic will handle rerun if orchestrator_active is False
+                return # Ensure we exit this specific task execution attempt
 
             # B. State Analysis (using pixtral-large-latest for analyze_state_vision)
             add_message("assistant", "🧐 Analyzing outcome of the action...", "info")
