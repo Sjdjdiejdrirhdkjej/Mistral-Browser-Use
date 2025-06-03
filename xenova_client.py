@@ -6,8 +6,8 @@ class XenovaClient:
     def __init__(self):
         self.text_pipe = None
         try:
-            self.text_pipe = pipeline('text2text-generation', model='t5-small', tokenizer='t5-small', device=-1)
-            print("Text generation pipeline (t5-small) initialized successfully.")
+            self.text_pipe = pipeline('text2text-generation', model='google/flan-t5-base', tokenizer='google/flan-t5-base', device=-1)
+            print("Text generation pipeline (google/flan-t5-base) initialized successfully.")
         except Exception as e:
             print(f"Error initializing Xenova text generation pipeline: {e}")
             # self.text_pipe remains None
