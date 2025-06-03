@@ -3,9 +3,9 @@ import json
 import re
 
 class OllamaClient:
-    def __init__(self, model='llama2', host='http://localhost:11434'):
-        self.model = model
-        self.host = host
+    def __init__(self):
+        self.model = 'deepseek-r1'
+        self.host = 'http://localhost:11434'
         self.client = ollama.Client(host=self.host)
 
     def test_connection(self):

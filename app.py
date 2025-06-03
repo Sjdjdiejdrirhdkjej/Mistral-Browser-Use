@@ -7,6 +7,8 @@ from browser_automation import BrowserAutomation
 from mistral_client import MistralClient
 from ollama_client import OllamaClient
 from element_detector import ElementDetector
+import ollama_manager
+import atexit
 import todo_manager # Added import
 import traceback
 import re # Added import
@@ -256,12 +258,14 @@ def initialize_session_state():
         st.session_state.ollama_client = None
     if 'selected_ai_provider' not in st.session_state:
         st.session_state.selected_ai_provider = "Mistral" # Default to Mistral
-    if 'ollama_model_input' not in st.session_state:
-        st.session_state.ollama_model_input = "llama2" # Default model
-    if 'ollama_host_input' not in st.session_state:
-        st.session_state.ollama_host_input = "http://localhost:11434" # Default host
+    # Ollama related session state
+    if 'ollama_client' not in st.session_state:
+        st.session_state.ollama_client = None
+    if 'selected_ai_provider' not in st.session_state:
+        st.session_state.selected_ai_provider = "Mistral"
     if 'ollama_connection_status' not in st.session_state:
-        st.session_state.ollama_connection_status = "Not Connected"
+        st.session_state.ollama_connection_status = "Local server not started"
+    # Removed ollama_model_input and ollama_host_input as they are fixed by OllamaClient update
 
 def setup_sidebar():
     """Setup sidebar for API key configuration and controls"""
@@ -292,42 +296,36 @@ def setup_sidebar():
             st.sidebar.warning("⚠️ Please enter your Mistral AI API key")
 
     elif st.session_state.selected_ai_provider == "Ollama":
-        st.sidebar.subheader("Ollama Configuration")
-        st.session_state.ollama_model_input = st.sidebar.text_input(
-            "Ollama Model",
-            value=st.session_state.ollama_model_input,
-            help="Specify the Ollama model to use (e.g., llama2, codellama)."
-        )
-        st.session_state.ollama_host_input = st.sidebar.text_input(
-            "Ollama Host URL",
-            value=st.session_state.ollama_host_input,
-            help="Specify the URL of your Ollama server (e.g., http://localhost:11434)."
-        )
-        if st.sidebar.button("Connect to Ollama"):
-            if not st.session_state.ollama_host_input or not st.session_state.ollama_model_input:
-                st.sidebar.error("Please provide both Ollama model and host URL.")
-                st.session_state.ollama_client = None
-                st.session_state.ollama_connection_status = "Error: Missing details"
-            else:
+        st.sidebar.subheader("Ollama Configuration (Local - deepseek-r1)")
+        if st.session_state.get('ollama_server_started') and st.session_state.get('deepseek_model_ensured'):
+            st.sidebar.info("Local Ollama server is active. Model: deepseek-r1.")
+            if st.session_state.ollama_client is None: # Attempt to connect client if server/model ready
                 try:
-                    client = OllamaClient(
-                        model=st.session_state.ollama_model_input,
-                        host=st.session_state.ollama_host_input
-                    )
+                    client = OllamaClient() # No arguments needed now
                     if client.test_connection():
                         st.session_state.ollama_client = client
-                        st.session_state.ollama_connection_status = f"✅ Connected to {st.session_state.ollama_model_input}"
+                        st.session_state.ollama_connection_status = "✅ Connected to local deepseek-r1"
                         st.sidebar.success(st.session_state.ollama_connection_status)
                     else:
                         st.session_state.ollama_client = None
-                        st.session_state.ollama_connection_status = f"❌ Failed to connect to {st.session_state.ollama_host_input}"
+                        st.session_state.ollama_connection_status = "❌ Local server started, but client connection failed."
                         st.sidebar.error(st.session_state.ollama_connection_status)
                 except Exception as e:
                     st.session_state.ollama_client = None
-                    st.session_state.ollama_connection_status = f"❌ Error: {str(e)}"
+                    st.session_state.ollama_connection_status = f"❌ Error initializing Ollama client: {str(e)}"
                     st.sidebar.error(st.session_state.ollama_connection_status)
-        # Display current Ollama connection status
-        st.sidebar.write(f"Ollama Status: {st.session_state.ollama_connection_status}")
+            else: # Client already exists and connected (or failed previously)
+                st.sidebar.write(f"Ollama Client: {st.session_state.ollama_connection_status}")
+        elif st.session_state.get('ollama_server_started') and not st.session_state.get('deepseek_model_ensured'):
+            st.sidebar.warning("Local Ollama server started, but deepseek-r1 model setup failed or is pending. Client unavailable.")
+            st.session_state.ollama_client = None # Ensure client is None if model not ready
+            st.session_state.ollama_connection_status = "Model setup failed"
+        else: # Ollama server not started or failed
+            st.sidebar.error("Local Ollama server is not running or failed to start. Ollama provider unavailable.")
+            st.session_state.ollama_client = None # Ensure client is None if server not ready
+            st.session_state.ollama_connection_status = "Local server not running"
+        # No "Connect" button, as connection is now attempted automatically if server/model are ready.
+        # Display overall status (already handled by generic status display later)
 
     st.sidebar.divider()
 
@@ -603,6 +601,39 @@ def main():
     
     initialize_session_state()
     setup_sidebar()
+
+    # Ollama Server and Model Management (run once using session state flags)
+    if 'ollama_server_started' not in st.session_state:
+        st.session_state.ollama_server_started = False
+    if 'deepseek_model_ensured' not in st.session_state:
+        st.session_state.deepseek_model_ensured = False
+
+    # This block will only run if the server start hasn't been (successfully or unsuccessfully) attempted yet.
+    # Or if it was attempted but failed, allowing another try on rerun if user changes provider.
+    # For a more robust "retry on demand", a button could reset these flags.
+    if st.session_state.selected_ai_provider == "Ollama" and not st.session_state.ollama_server_started:
+        with st.spinner("Attempting to start local Ollama server and ensure model..."):
+            server_started_successfully = ollama_manager.start_ollama_serve()
+            st.session_state.ollama_server_started = server_started_successfully # Record success/failure
+
+            if server_started_successfully:
+                if ollama_manager.ensure_deepseek_model():
+                    st.session_state.deepseek_model_ensured = True
+                    # Sidebar will attempt to connect client on its own if these are true
+                else:
+                    st.session_state.deepseek_model_ensured = False
+                    st.sidebar.error("Failed to ensure deepseek-r1 model. Check logs.") # Also logged by manager
+            else:
+                st.sidebar.error("Local Ollama server failed to start. Ollama provider will be unavailable. Check logs.")
+                st.session_state.deepseek_model_ensured = False # Can't ensure model if server not up
+        st.rerun() # Rerun to update UI based on server/model status
+
+    # Register stop_ollama_serve if our manager started a process
+    # This needs to be idempotent and safe to call multiple times if registered via rerun.
+    # atexit typically handles single registration.
+    if ollama_manager.OLLAMA_PROCESS is not None and not hasattr(atexit, '_ollama_registered'):
+        atexit.register(ollama_manager.stop_ollama_serve)
+        atexit._ollama_registered = True # Flag to prevent re-registration on reruns
 
     # E2B Desktop Management based on e2b_should_be_running
     # Start E2B session if in E2B mode, should be running, and no session exists
