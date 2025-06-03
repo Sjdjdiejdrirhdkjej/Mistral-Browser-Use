@@ -108,7 +108,10 @@ Example: {{"error": null, "task_completed": false, "objective_completed": false,
                 return parsed_analysis
             else:
                 # _parse_json_from_text_pipe already printed an error
-                return {**default_error_response, "summary": f"AI response was not valid JSON or missed keys: {generated_text[:200]}..." }
+                error_response = default_error_response.copy()
+                error_response["summary"] = "AI response was not valid JSON or missed keys. See raw_ai_output."
+                error_response["raw_ai_output"] = generated_text[:500] # Include raw output
+                return error_response
 
         except Exception as e:
             print(f"Error in analyze_state_vision with text_pipe: {e}")
@@ -154,14 +157,24 @@ Example: {{"thinking": "The user wants to log in, OCR shows 'username' and 'pass
                          return {"thinking": thinking, "action": action}
                     else:
                         print("Regex fallback also failed to extract required fields.")
-                        return {**default_error_response, "thinking": f"AI response was not valid JSON and regex fallback failed: {generated_text[:200]}..."}
+                        error_response = default_error_response.copy()
+                        error_response["thinking"] = "AI response was not valid JSON and fallbacks failed. See raw_ai_output."
+                        error_response["raw_ai_output"] = generated_text[:500] # Include raw output
+                        return error_response
                 except Exception as fallback_e:
                     print(f"Error during regex fallback extraction: {fallback_e}")
-                    return {**default_error_response, "thinking": f"AI response was not valid JSON, regex fallback failed: {fallback_e}"}
+                    error_response = default_error_response.copy()
+                    error_response["thinking"] = f"AI response was not valid JSON, regex fallback failed: {fallback_e}. See raw_ai_output."
+                    error_response["raw_ai_output"] = generated_text[:500] # Include raw output
+                    return error_response
 
         except Exception as e:
             print(f"Error in analyze_and_decide with text_pipe: {e}")
-            return {**default_error_response, "thinking": f"Exception during AI call: {str(e)}"}
+            error_response = default_error_response.copy()
+            error_response["thinking"] = f"Exception during AI call: {str(e)}. See raw_ai_output."
+            # It's possible generated_text is not defined here if error is before AI call
+            error_response["raw_ai_output"] = generated_text[:500] if 'generated_text' in locals() else "N/A"
+            return error_response
 
 # Example Usage (for testing individual methods - not part of the class)
 if __name__ == '__main__':
