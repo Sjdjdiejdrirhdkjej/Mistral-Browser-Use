@@ -715,7 +715,7 @@ Analyze the provided gridded screenshot/description and output your next action.
                             st.session_state.e2b_automation_active = False
                             st.rerun()
                             return # Added return
-                        
+
                         image_data_for_ai = None
                         with open(gridded_screenshot_path, 'rb') as img_file:
                             image_data_for_ai = base64.b64encode(img_file.read()).decode('utf-8')
@@ -756,9 +756,9 @@ Analyze the provided gridded screenshot/description and output your next action.
 
                     if not ai_response_text:
                         add_message("assistant", "E2B Automation: AI did not return an action.", "error")
-                            st.session_state.e2b_automation_active = False 
-                        else:
-                            add_message("assistant", f"E2B AI Action: {ai_response_text}", "info") # This one was already there
+                        st.session_state.e2b_automation_active = False
+                    else:
+                        add_message("assistant", f"E2B AI Action: {ai_response_text}", "info") # This one was already there
                             st.session_state.e2b_last_action = ai_response_text
 
                             action_executed = False
