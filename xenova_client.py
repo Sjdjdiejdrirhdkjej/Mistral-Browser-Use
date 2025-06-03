@@ -15,8 +15,6 @@ class XenovaClient:
     def _parse_json_from_text_pipe(self, generated_text: str, expected_keys: list) -> dict:
         """
         Helper function to parse JSON from the text pipeline's output.
-        """
-        Helper function to parse JSON from the text pipeline's output.
         Uses regex to find a JSON-like string and then attempts to parse it.
         """
         try:
