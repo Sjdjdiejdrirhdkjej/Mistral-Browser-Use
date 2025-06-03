@@ -5,11 +5,11 @@ import base64
 from datetime import datetime
 from browser_automation import BrowserAutomation
 from mistral_client import MistralClient
-from ollama_client import OllamaClient
+from xenova_client import XenovaClient # Added XenovaClient
 from element_detector import ElementDetector
-import ollama_manager
-import atexit
-import todo_manager # Added import
+# import ollama_manager # Removed ollama_manager
+import atexit # Keep atexit for other potential uses
+import todo_manager
 import traceback
 import re # Added import
 from e2b_desktop import Sandbox # Corrected import
@@ -254,27 +254,10 @@ def initialize_session_state():
     if 'e2b_should_be_running' not in st.session_state:
         st.session_state.e2b_should_be_running = False
     # Ollama related session state
-    if 'ollama_client' not in st.session_state:
-        st.session_state.ollama_client = None
     if 'selected_ai_provider' not in st.session_state:
         st.session_state.selected_ai_provider = "Mistral" # Default to Mistral
-    # Ollama related session state
-    if 'ollama_client' not in st.session_state:
-        st.session_state.ollama_client = None
-    if 'selected_ai_provider' not in st.session_state:
-        st.session_state.selected_ai_provider = "Mistral"
-    if 'ollama_connection_status' not in st.session_state:
-        st.session_state.ollama_connection_status = "Local server not started"
-    # New detailed status flags for Ollama server and model
-    if 'ollama_server_started_status' not in st.session_state:
-        st.session_state.ollama_server_started_status = None
-    if 'deepseek_model_ensured_status' not in st.session_state:
-        st.session_state.deepseek_model_ensured_status = None
-    # Keep old boolean flags for now, might be used elsewhere or can be deprecated later
-    if 'ollama_server_started' not in st.session_state: # Retained for potential compatibility
-        st.session_state.ollama_server_started = False
-    if 'deepseek_model_ensured' not in st.session_state: # Retained for potential compatibility
-        st.session_state.deepseek_model_ensured = False
+    if 'xenova_client' not in st.session_state: # Added for Xenova
+        st.session_state.xenova_client = None
 
 def setup_sidebar():
     """Setup sidebar for API key configuration and controls"""
@@ -284,8 +267,8 @@ def setup_sidebar():
     st.sidebar.subheader("🤖 AI Provider")
     st.session_state.selected_ai_provider = st.sidebar.selectbox(
         "Choose AI Provider",
-        ["Mistral", "Ollama"],
-        index=["Mistral", "Ollama"].index(st.session_state.selected_ai_provider)
+        ["Mistral", "Xenova T5-Small"], # Changed "Ollama" to "Xenova T5-Small"
+        index=["Mistral", "Xenova T5-Small"].index(st.session_state.selected_ai_provider)
     )
     st.sidebar.divider()
 
@@ -304,59 +287,20 @@ def setup_sidebar():
         else:
             st.sidebar.warning("⚠️ Please enter your Mistral AI API key")
 
-    elif st.session_state.selected_ai_provider == "Ollama":
-        st.sidebar.subheader("Ollama Configuration (Local - deepseek-r1)")
-        server_status = st.session_state.get('ollama_server_started_status')
-        model_status = st.session_state.get('deepseek_model_ensured_status')
-
-        is_server_ok = server_status in ["SERVER_STARTED_AND_RESPONSIVE", "EXISTING_SERVER_DETECTED", "MANAGED_PROCESS_ALREADY_RUNNING"]
-        is_model_ok = model_status == "MODEL_AVAILABLE"
-
-        if is_server_ok and is_model_ok:
-            st.sidebar.info("Local Ollama server active. Model: deepseek-r1.")
-            if st.session_state.ollama_client is None: # Attempt to init client
-                try:
-                    client = OllamaClient()
-                    if client.test_connection():
-                        st.session_state.ollama_client = client
-                        st.session_state.ollama_connection_status = "✅ Connected to local deepseek-r1"
-                        st.sidebar.success(st.session_state.ollama_connection_status)
-                    else:
-                        st.session_state.ollama_client = None
-                        st.session_state.ollama_connection_status = "❌ Local server OK, but client connection failed."
-                        st.sidebar.error(st.session_state.ollama_connection_status)
-                except Exception as e:
-                    st.session_state.ollama_client = None
-                    st.session_state.ollama_connection_status = "❌ Error initializing Ollama client: " + str(e)
-                    st.sidebar.error(st.session_state.ollama_connection_status)
-            else:
-                st.sidebar.write(f"Ollama Client: {st.session_state.ollama_connection_status}") # Show existing status
-
-        elif is_server_ok and not is_model_ok:
-            st.sidebar.warning(f"Local Ollama server is running, but deepseek-r1 model setup status: {model_status}. Client unavailable.")
-            if model_status == "COMMAND_NOT_FOUND":
-                st.sidebar.error("Ollama command not found during model check. Is Ollama fully installed and in PATH?")
-            elif model_status == "MODEL_PULL_FAILED":
-                 st.sidebar.error("Failed to pull deepseek-r1 model. Check network/Ollama logs.")
-            elif model_status == "MODEL_OPERATION_TIMEOUT":
-                 st.sidebar.error("Timeout during Ollama model operation. Check Ollama server.")
-            # Add more specific messages for other model_status if needed
-            st.session_state.ollama_client = None
-            st.session_state.ollama_connection_status = f"Model status: {model_status}"
-
-        else: # Server not ok
-            if server_status == "COMMAND_NOT_FOUND":
-                st.sidebar.error("Ollama command not found. Please install Ollama and add to PATH. Ollama provider unavailable.")
-            elif server_status == "SERVER_START_TIMEOUT":
-                st.sidebar.error("Local Ollama server started but timed out responding. Ollama provider unavailable.")
-            elif server_status == "SERVER_START_FAILED":
-                 st.sidebar.error(f"Local Ollama server failed to start ({server_status}). Ollama provider unavailable.")
-            elif server_status: # Any other non-successful server status string
-                st.sidebar.error(f"Local Ollama server issue: {server_status}. Ollama provider unavailable.")
-            else: # server_status is None (should not happen if main logic runs)
-                st.sidebar.error("Local Ollama server status unknown or not started. Ollama provider unavailable.")
-            st.session_state.ollama_client = None
-            st.session_state.ollama_connection_status = f"Server status: {server_status or 'Unknown'}"
+    elif st.session_state.selected_ai_provider == "Xenova T5-Small":
+        st.sidebar.subheader("Xenova T5-Small (Local)")
+        if 'xenova_client' not in st.session_state or st.session_state.xenova_client is None:
+            try:
+                with st.spinner("Loading Xenova T5-Small model..."):
+                    st.session_state.xenova_client = XenovaClient()
+                st.sidebar.success("✅ Xenova T5-Small client initialized.")
+            except Exception as e:
+                st.sidebar.error(f"❌ Failed to initialize Xenova client: {e}")
+                st.session_state.xenova_client = None # Ensure it's None on failure
+        elif st.session_state.xenova_client:
+            st.sidebar.success("✅ Xenova T5-Small client ready.")
+        else: # Should not happen if logic is correct, but as a fallback
+            st.sidebar.error("❌ Xenova T5-Small client not initialized. Try re-selecting.")
 
     st.sidebar.divider()
 
@@ -461,16 +405,9 @@ def setup_sidebar():
     if st.session_state.selected_ai_provider == "Mistral":
         api_status = "🟢 Connected" if st.session_state.get('mistral_client') else "🔴 Not configured"
         st.sidebar.write(f"Mistral AI: {api_status}")
-    elif st.session_state.selected_ai_provider == "Ollama":
-        # Display simpler status for Ollama based on connection_status
-        ollama_short_status = st.session_state.ollama_connection_status.split(' ')[0] # Gets "✅", "❌", "Not"
-        if ollama_short_status == "✅":
-             ollama_display_status = f"🟢 {st.session_state.ollama_connection_status}"
-        elif ollama_short_status == "❌":
-            ollama_display_status = f"🔴 {st.session_state.ollama_connection_status}"
-        else: # Not Connected or other statuses
-            ollama_display_status = f"⚪ {st.session_state.ollama_connection_status}"
-        st.sidebar.write(f"Ollama: {ollama_display_status}")
+    elif st.session_state.selected_ai_provider == "Xenova T5-Small":
+        xenova_status = "🟢 Connected" if st.session_state.get('xenova_client') else "🔴 Not initialized"
+        st.sidebar.write(f"Xenova T5-Small: {xenova_status}")
 
 def display_chat_history():
     """Display chat message history"""
@@ -633,64 +570,6 @@ def main():
     initialize_session_state()
     setup_sidebar()
 
-    # Ollama Server and Model Management
-    if 'ollama_server_started_status' not in st.session_state:
-        st.session_state.ollama_server_started_status = None
-    if 'deepseek_model_ensured_status' not in st.session_state:
-        st.session_state.deepseek_model_ensured_status = None
-
-    # Logic to attempt Ollama server start and model ensuring
-    # This runs if Ollama is selected AND the server hasn't been confirmed as successfully running.
-    # The statuses "EXISTING_SERVER_DETECTED" and "MANAGED_PROCESS_ALREADY_RUNNING" also count as success.
-    ollama_ready_statuses = ["SERVER_STARTED_AND_RESPONSIVE", "EXISTING_SERVER_DETECTED", "MANAGED_PROCESS_ALREADY_RUNNING"]
-    if st.session_state.selected_ai_provider == "Ollama" and \
-       st.session_state.ollama_server_started_status not in ollama_ready_statuses:
-
-        with st.spinner("Attempting to initialize local Ollama environment..."):
-            # Attempt to start the server
-            server_success, server_status_msg = ollama_manager.start_ollama_serve()
-            st.session_state.ollama_server_started_status = server_status_msg
-            st.session_state.ollama_server_started = server_success # Update legacy boolean flag
-
-            if server_success:
-                # If server is okay, try to ensure the model
-                if st.session_state.deepseek_model_ensured_status != "MODEL_AVAILABLE": # Only if not already confirmed
-                    model_success, model_status_msg = ollama_manager.ensure_deepseek_model()
-                    st.session_state.deepseek_model_ensured_status = model_status_msg
-                    st.session_state.deepseek_model_ensured = model_success # Update legacy boolean flag
-
-                    if not model_success:
-                        # Specific error messages based on model status
-                        if model_status_msg == "COMMAND_NOT_FOUND":
-                            st.sidebar.error("Ollama command not found. Cannot ensure model. Is Ollama installed and in PATH?")
-                        elif model_status_msg == "MODEL_PULL_FAILED":
-                            st.sidebar.error("Failed to pull deepseek-r1 model. Check network and Ollama logs.")
-                        elif model_status_msg == "MODEL_OPERATION_TIMEOUT":
-                            st.sidebar.error("Ollama model operation timed out. Check Ollama server health.")
-                        else: # MODEL_ENSURE_FAILED or other
-                            st.sidebar.error(f"Failed to ensure deepseek-r1 model ({model_status_msg}). Check logs.")
-            else:
-                # Server did not start, update dependent states
-                st.session_state.deepseek_model_ensured = False
-                st.session_state.deepseek_model_ensured_status = "SERVER_FAILED_PREVENTING_MODEL_CHECK"
-                # Specific error messages based on server status
-                if server_status_msg == "COMMAND_NOT_FOUND":
-                    st.sidebar.error("Ollama command not found. Please install Ollama and ensure it's in your PATH.")
-                elif server_status_msg == "SERVER_START_TIMEOUT":
-                    st.sidebar.error("Local Ollama server started but timed out responding. Try restarting the app or check Ollama.")
-                elif server_status_msg == "SERVER_START_FAILED":
-                     st.sidebar.error(f"Local Ollama server failed to start ({server_status_msg}). Check logs.")
-                else: # Other specific server start failure messages from manager
-                    st.sidebar.error(f"Local Ollama server issue: {server_status_msg}. Ollama provider unavailable.")
-        st.rerun() # Rerun to update UI after attempt
-
-    # Register stop_ollama_serve if our manager started a process
-    # This needs to be idempotent and safe to call multiple times if registered via rerun.
-    # atexit typically handles single registration.
-    if ollama_manager.OLLAMA_PROCESS is not None and not hasattr(atexit, '_ollama_registered'):
-        atexit.register(ollama_manager.stop_ollama_serve)
-        atexit._ollama_registered = True # Flag to prevent re-registration on reruns
-
     # E2B Desktop Management based on e2b_should_be_running
     # Start E2B session if in E2B mode, should be running, and no session exists
     if st.session_state.e2b_desktop_enabled and \
@@ -816,24 +695,18 @@ Analyze the provided gridded screenshot/description and output your next action.
                         )
                         ai_response_text = response_payload.get("action", "").strip() if isinstance(response_payload, dict) else str(response_payload).strip()
 
-                    elif st.session_state.selected_ai_provider == "Ollama":
-                        if not st.session_state.ollama_client:
-                            add_message("assistant", "Ollama client not available for E2B automation.", "error")
-                            st.session_state.e2b_automation_active = False
-                            st.rerun()
-                            return # Added return
-
-                        # For Ollama, we'll provide a textual description of the gridded screenshot context
-                        # A more advanced implementation might try to OCR the screenshot or describe it in more detail.
-                        # For now, a generic message indicating a gridded view is available.
-                        e2b_screen_description_for_ollama = f"Current gridded view of the E2B desktop is available (cells A1-J10). Previous action: {st.session_state.e2b_last_action or 'None'}. User objective: {st.session_state.current_objective}. Refer to system context for action format."
-
-                        response_payload_ollama = st.session_state.ollama_client.analyze_and_decide(
-                            user_objective=f"Given the E2B desktop state (gridded view), and the overall objective '{st.session_state.current_objective}', determine the next action.",
-                            current_context=e2b_system_prompt, # Ollama's system prompt is inside the client method
-                            screen_description=e2b_screen_description_for_ollama
+                    elif st.session_state.selected_ai_provider == "Xenova T5-Small":
+                        if not st.session_state.xenova_client:
+                            add_message("assistant", "Xenova client not available for E2B automation.", "error")
+                            st.session_state.e2b_automation_active = False; st.rerun(); return
+                        e2b_screen_description_for_xenova = f"E2B desktop gridded view (A1-J10). Prev action: {st.session_state.e2b_last_action or 'None'}. Objective: {st.session_state.current_objective}. Follow system context for action format."
+                        # The e2b_system_prompt is already defined and passed as current_context to Xenova's analyze_and_decide
+                        response_payload_xenova = st.session_state.xenova_client.analyze_and_decide(
+                            user_objective=f"E2B: Given gridded desktop, objective '{st.session_state.current_objective}', determine next action.",
+                            current_context=e2b_system_prompt, # Pass the detailed system prompt here
+                            screen_description=e2b_screen_description_for_xenova
                         )
-                        ai_response_text = response_payload_ollama.get("action", "").strip() if isinstance(response_payload_ollama, dict) else str(response_payload_ollama).strip()
+                        ai_response_text = response_payload_xenova.get("action", "").strip() if isinstance(response_payload_xenova, dict) else str(response_payload_xenova).strip()
 
                     else:
                         add_message("assistant", "No AI provider selected for E2B automation.", "error")
@@ -914,18 +787,13 @@ Analyze the provided gridded screenshot/description and output your next action.
             return 
 
         # Check prerequisites (only if not in active E2B mode, due to the early return above)
-        if not st.session_state.mistral_client:
-            add_message("assistant", "Please configure your Mistral AI API key in the sidebar first.", "error")
-            st.rerun()
-            return 
-        
         # Prerequisites check
         if st.session_state.selected_ai_provider == "Mistral" and not st.session_state.get('mistral_client'):
             add_message("assistant", "Please configure your Mistral AI API key in the sidebar first.", "error")
             st.rerun()
             return
-        elif st.session_state.selected_ai_provider == "Ollama" and not st.session_state.get('ollama_client'):
-            add_message("assistant", "Please connect to your Ollama client in the sidebar first.", "error")
+        elif st.session_state.selected_ai_provider == "Xenova T5-Small" and not st.session_state.get('xenova_client'):
+            add_message("assistant", "Xenova T5-Small client not initialized. Please check the sidebar.", "error")
             st.rerun()
             return
 
@@ -959,16 +827,12 @@ Analyze the provided gridded screenshot/description and output your next action.
                     user_prompt=user_input,
                     model_name="pixtral-large-latest" # Consider making model configurable
                 )
-            elif st.session_state.selected_ai_provider == "Ollama":
-                if not st.session_state.ollama_client: # Should be caught by prerequisite check
-                    add_message("assistant", "Ollama client not connected. Please connect in the sidebar.", "error")
+            elif st.session_state.selected_ai_provider == "Xenova T5-Small":
+                if not st.session_state.xenova_client:
+                    add_message("assistant", "Xenova client not initialized. Cannot generate steps.", "error")
                     st.session_state.orchestrator_active = False
-                    st.rerun()
-                    return
-                generated_steps = st.session_state.ollama_client.generate_steps_for_todo(
-                    user_prompt=user_input
-                    # model_name can be specified here if needed, defaults to client's model
-                )
+                    st.rerun(); return
+                generated_steps = st.session_state.xenova_client.generate_steps_for_todo(user_prompt=user_input)
             else:
                 add_message("assistant", "No AI provider selected or configured for step generation.", "error")
                 st.session_state.orchestrator_active = False
@@ -994,7 +858,7 @@ Analyze the provided gridded screenshot/description and output your next action.
             st.session_state.current_task_index = 0 # Start from the first task
 
             # Display To-Do List
-            plan_display_intro = "**Planning Agent (Pixtral-Large-Latest) says:** Planning complete. Here's the initial plan:"
+            plan_display_intro = f"**Planning Agent ({st.session_state.selected_ai_provider}) says:** Planning complete. Here's the initial plan:"
             plan_display = f"{plan_display_intro}\n\n**Objective:** {st.session_state.todo_objective}\n\n"
             plan_display += "**Tasks:**\n"
             if st.session_state.todo_tasks:
@@ -1013,8 +877,8 @@ Analyze the provided gridded screenshot/description and output your next action.
     
     # Orchestrator Main Execution Loop
     if st.session_state.get('orchestrator_active') and st.session_state.todo_tasks:
-        if not st.session_state.browser or not st.session_state.mistral_client:
-            add_message("assistant", "Browser or Mistral client not initialized. Orchestrator cannot proceed.", "error")
+        if not st.session_state.browser or not (st.session_state.mistral_client or st.session_state.xenova_client):
+            add_message("assistant", "Browser or AI client not initialized. Orchestrator cannot proceed.", "error")
             st.session_state.orchestrator_active = False
             st.rerun()
             return
@@ -1056,21 +920,18 @@ Analyze the provided gridded screenshot/description and output your next action.
                     response = st.session_state.mistral_client.analyze_and_decide(
                         image_data, current_task, model_name=action_decision_model_mistral, current_context=st.session_state.todo_objective
                     )
-
-                elif st.session_state.selected_ai_provider == "Ollama":
-                    if not st.session_state.ollama_client:
-                        add_message("assistant", "Ollama client not available for action decision.", "error")
-                        st.session_state.orchestrator_active = False
-                        st.rerun(); return
-
-                    screen_description_for_ollama = f"A screenshot has been taken and annotated with element indices. The current task is '{current_task}'. The overall objective is '{st.session_state.todo_objective}'. Based on this task and the objective, decide the next browser action. If the task implies visual confirmation (e.g., 'Verify X is visible'), and you cannot confirm from text, you might need to state that or suggest a different type of step if the action language allows."
-                    if not annotated_image_path: # Fallback if screenshot failed
-                        screen_description_for_ollama = "No visual information available (screenshot failed). Base decision on task and objective."
-
-                    response = st.session_state.ollama_client.analyze_and_decide(
+                elif st.session_state.selected_ai_provider == "Xenova T5-Small":
+                    if not st.session_state.xenova_client:
+                        add_message("assistant", "Xenova client not available for action decision.", "error")
+                        st.session_state.orchestrator_active = False; st.rerun(); return
+                    # Prepare screen_description for XenovaClient (text-based)
+                    screen_description_for_xenova = f"Current task: '{current_task}'. Objective: '{st.session_state.todo_objective}'. Screen: Element indices available from annotated screenshot. Decide next browser action."
+                    if not annotated_image_path:
+                        screen_description_for_xenova = "No visual information available. Base decision on task and objective."
+                    response = st.session_state.xenova_client.analyze_and_decide(
                         user_objective=current_task,
                         current_context=st.session_state.todo_objective,
-                        screen_description=screen_description_for_ollama
+                        screen_description=screen_description_for_xenova
                     )
                 else:
                     add_message("assistant", "No AI provider selected for action decision.", "error")
@@ -1080,7 +941,7 @@ Analyze the provided gridded screenshot/description and output your next action.
                 thinking = response.get('thinking', 'No reasoning provided for action.')
                 action_str = response.get('action', '')
 
-                provider_tag = "Mistral-Small-Latest" if st.session_state.selected_ai_provider == "Mistral" else st.session_state.ollama_client.model
+                provider_tag = "Mistral-Small-Latest" if st.session_state.selected_ai_provider == "Mistral" else "Xenova T5-Small"
                 add_message("assistant", f"**Action Model ({provider_tag}) Reasoning:** {thinking}", "thinking")
 
                 if not action_str:
@@ -1128,22 +989,17 @@ Analyze the provided gridded screenshot/description and output your next action.
                     analysis_result = st.session_state.mistral_client.analyze_state_vision(
                         image_data_after_action, current_task, st.session_state.todo_objective, model_name=vision_model_mistral
                     )
-                elif st.session_state.selected_ai_provider == "Ollama":
-                    if not st.session_state.ollama_client:
-                        add_message("assistant", "Ollama client not available for state analysis.", "error")
-                        st.session_state.orchestrator_active = False
-                        st.rerun()
-                        return
-
-                    screen_description_for_ollama_vision = f"After an action, the current task is '{current_task}'. The overall objective is '{st.session_state.todo_objective}'. A new screen is available (screenshot taken) but cannot be visually processed by this model. Based on the task and objective, analyze the state (error, task_completed, objective_completed) and provide a summary."
-                    if not annotated_image_path_after_action: # Fallback if screenshot failed
-                         screen_description_for_ollama_vision = "No visual information available for state analysis (screenshot failed)."
-
-                    analysis_result = st.session_state.ollama_client.analyze_state_vision(
+                elif st.session_state.selected_ai_provider == "Xenova T5-Small":
+                    if not st.session_state.xenova_client:
+                        add_message("assistant", "Xenova client not available for state analysis.", "error")
+                        st.session_state.orchestrator_active = False; st.rerun(); return
+                    screen_description_for_xenova_vision = f"After action for task '{current_task}'. Objective: '{st.session_state.todo_objective}'. Screen: New screenshot taken. Analyze state."
+                    if not annotated_image_path_after_action:
+                         screen_description_for_xenova_vision = "No visual information for state analysis. Base analysis on task and objective."
+                    analysis_result = st.session_state.xenova_client.analyze_state_vision(
                         current_task=current_task,
                         objective=st.session_state.todo_objective,
-                        screen_description=screen_description_for_ollama_vision
-                        # model_name can be specified here for Ollama client
+                        screen_description=screen_description_for_xenova_vision
                     )
                 else:
                     add_message("assistant", "No AI provider selected for state analysis.", "error")
@@ -1152,7 +1008,7 @@ Analyze the provided gridded screenshot/description and output your next action.
                     return
 
                 analysis_summary = analysis_result.get('summary', 'No analysis summary provided.')
-                provider_tag_vision = vision_model_mistral if st.session_state.selected_ai_provider == "Mistral" else st.session_state.ollama_client.model
+                provider_tag_vision = vision_model_mistral if st.session_state.selected_ai_provider == "Mistral" else "Xenova T5-Small"
                 add_message("assistant", f"**State Analysis Model ({provider_tag_vision}) Summary:** {analysis_summary}", "info")
                 st.session_state.execution_summary.append({"task": current_task, "vision_analysis": analysis_result})
 
@@ -1196,18 +1052,20 @@ Analyze the provided gridded screenshot/description and output your next action.
                         final_analysis = st.session_state.mistral_client.analyze_state_vision(
                             final_image_data, "Final objective verification", st.session_state.todo_objective, model_name="pixtral-12b-2409"
                         )
-                    elif st.session_state.selected_ai_provider == "Ollama":
-                        final_screen_desc = "Final verification: A screenshot is available. Assess if the overall objective appears complete based on this and the objective text."
+                    elif st.session_state.selected_ai_provider == "Xenova T5-Small":
+                        if not st.session_state.xenova_client: # Add check
+                            add_message("assistant", "Xenova client not available for final verification.", "error"); st.rerun(); return
+                        final_screen_desc = "Final verification: Screenshot available. Assess if objective is complete."
                         if not final_annotated_image_path:
-                            final_screen_desc = "Final verification: No screenshot available. Assess based on objective text only."
-                        final_analysis = st.session_state.ollama_client.analyze_state_vision(
+                            final_screen_desc = "Final verification: No screenshot. Assess based on objective text."
+                        final_analysis = st.session_state.xenova_client.analyze_state_vision(
                             current_task="Final objective verification",
                             objective=st.session_state.todo_objective,
                             screen_description=final_screen_desc
                         )
 
                     final_summary = final_analysis.get('summary', 'No final summary.')
-                    final_provider_tag = "Mistral" if st.session_state.selected_ai_provider == "Mistral" else st.session_state.ollama_client.model
+                    final_provider_tag = "Mistral" if st.session_state.selected_ai_provider == "Mistral" else "Xenova T5-Small"
                     add_message("assistant", f"Final Check Summary ({final_provider_tag}): {final_summary}", "info")
 
                     if final_analysis.get("objective_completed"): # Relies on boolean from analyze_state_vision
