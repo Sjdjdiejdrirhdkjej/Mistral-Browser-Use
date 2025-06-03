@@ -265,7 +265,16 @@ def initialize_session_state():
         st.session_state.selected_ai_provider = "Mistral"
     if 'ollama_connection_status' not in st.session_state:
         st.session_state.ollama_connection_status = "Local server not started"
-    # Removed ollama_model_input and ollama_host_input as they are fixed by OllamaClient update
+    # New detailed status flags for Ollama server and model
+    if 'ollama_server_started_status' not in st.session_state:
+        st.session_state.ollama_server_started_status = None
+    if 'deepseek_model_ensured_status' not in st.session_state:
+        st.session_state.deepseek_model_ensured_status = None
+    # Keep old boolean flags for now, might be used elsewhere or can be deprecated later
+    if 'ollama_server_started' not in st.session_state: # Retained for potential compatibility
+        st.session_state.ollama_server_started = False
+    if 'deepseek_model_ensured' not in st.session_state: # Retained for potential compatibility
+        st.session_state.deepseek_model_ensured = False
 
 def setup_sidebar():
     """Setup sidebar for API key configuration and controls"""
@@ -297,35 +306,57 @@ def setup_sidebar():
 
     elif st.session_state.selected_ai_provider == "Ollama":
         st.sidebar.subheader("Ollama Configuration (Local - deepseek-r1)")
-        if st.session_state.get('ollama_server_started') and st.session_state.get('deepseek_model_ensured'):
-            st.sidebar.info("Local Ollama server is active. Model: deepseek-r1.")
-            if st.session_state.ollama_client is None: # Attempt to connect client if server/model ready
+        server_status = st.session_state.get('ollama_server_started_status')
+        model_status = st.session_state.get('deepseek_model_ensured_status')
+
+        is_server_ok = server_status in ["SERVER_STARTED_AND_RESPONSIVE", "EXISTING_SERVER_DETECTED", "MANAGED_PROCESS_ALREADY_RUNNING"]
+        is_model_ok = model_status == "MODEL_AVAILABLE"
+
+        if is_server_ok and is_model_ok:
+            st.sidebar.info("Local Ollama server active. Model: deepseek-r1.")
+            if st.session_state.ollama_client is None: # Attempt to init client
                 try:
-                    client = OllamaClient() # No arguments needed now
+                    client = OllamaClient()
                     if client.test_connection():
                         st.session_state.ollama_client = client
                         st.session_state.ollama_connection_status = "✅ Connected to local deepseek-r1"
                         st.sidebar.success(st.session_state.ollama_connection_status)
                     else:
                         st.session_state.ollama_client = None
-                        st.session_state.ollama_connection_status = "❌ Local server started, but client connection failed."
+                        st.session_state.ollama_connection_status = "❌ Local server OK, but client connection failed."
                         st.sidebar.error(st.session_state.ollama_connection_status)
                 except Exception as e:
                     st.session_state.ollama_client = None
-                    st.session_state.ollama_connection_status = f"❌ Error initializing Ollama client: {str(e)}"
+                    st.session_state.ollama_connection_status = "❌ Error initializing Ollama client: " + str(e)
                     st.sidebar.error(st.session_state.ollama_connection_status)
-            else: # Client already exists and connected (or failed previously)
-                st.sidebar.write(f"Ollama Client: {st.session_state.ollama_connection_status}")
-        elif st.session_state.get('ollama_server_started') and not st.session_state.get('deepseek_model_ensured'):
-            st.sidebar.warning("Local Ollama server started, but deepseek-r1 model setup failed or is pending. Client unavailable.")
-            st.session_state.ollama_client = None # Ensure client is None if model not ready
-            st.session_state.ollama_connection_status = "Model setup failed"
-        else: # Ollama server not started or failed
-            st.sidebar.error("Local Ollama server is not running or failed to start. Ollama provider unavailable.")
-            st.session_state.ollama_client = None # Ensure client is None if server not ready
-            st.session_state.ollama_connection_status = "Local server not running"
-        # No "Connect" button, as connection is now attempted automatically if server/model are ready.
-        # Display overall status (already handled by generic status display later)
+            else:
+                st.sidebar.write(f"Ollama Client: {st.session_state.ollama_connection_status}") # Show existing status
+
+        elif is_server_ok and not is_model_ok:
+            st.sidebar.warning(f"Local Ollama server is running, but deepseek-r1 model setup status: {model_status}. Client unavailable.")
+            if model_status == "COMMAND_NOT_FOUND":
+                st.sidebar.error("Ollama command not found during model check. Is Ollama fully installed and in PATH?")
+            elif model_status == "MODEL_PULL_FAILED":
+                 st.sidebar.error("Failed to pull deepseek-r1 model. Check network/Ollama logs.")
+            elif model_status == "MODEL_OPERATION_TIMEOUT":
+                 st.sidebar.error("Timeout during Ollama model operation. Check Ollama server.")
+            # Add more specific messages for other model_status if needed
+            st.session_state.ollama_client = None
+            st.session_state.ollama_connection_status = f"Model status: {model_status}"
+
+        else: # Server not ok
+            if server_status == "COMMAND_NOT_FOUND":
+                st.sidebar.error("Ollama command not found. Please install Ollama and add to PATH. Ollama provider unavailable.")
+            elif server_status == "SERVER_START_TIMEOUT":
+                st.sidebar.error("Local Ollama server started but timed out responding. Ollama provider unavailable.")
+            elif server_status == "SERVER_START_FAILED":
+                 st.sidebar.error(f"Local Ollama server failed to start ({server_status}). Ollama provider unavailable.")
+            elif server_status: # Any other non-successful server status string
+                st.sidebar.error(f"Local Ollama server issue: {server_status}. Ollama provider unavailable.")
+            else: # server_status is None (should not happen if main logic runs)
+                st.sidebar.error("Local Ollama server status unknown or not started. Ollama provider unavailable.")
+            st.session_state.ollama_client = None
+            st.session_state.ollama_connection_status = f"Server status: {server_status or 'Unknown'}"
 
     st.sidebar.divider()
 
@@ -602,31 +633,56 @@ def main():
     initialize_session_state()
     setup_sidebar()
 
-    # Ollama Server and Model Management (run once using session state flags)
-    if 'ollama_server_started' not in st.session_state:
-        st.session_state.ollama_server_started = False
-    if 'deepseek_model_ensured' not in st.session_state:
-        st.session_state.deepseek_model_ensured = False
+    # Ollama Server and Model Management
+    if 'ollama_server_started_status' not in st.session_state:
+        st.session_state.ollama_server_started_status = None
+    if 'deepseek_model_ensured_status' not in st.session_state:
+        st.session_state.deepseek_model_ensured_status = None
 
-    # This block will only run if the server start hasn't been (successfully or unsuccessfully) attempted yet.
-    # Or if it was attempted but failed, allowing another try on rerun if user changes provider.
-    # For a more robust "retry on demand", a button could reset these flags.
-    if st.session_state.selected_ai_provider == "Ollama" and not st.session_state.ollama_server_started:
-        with st.spinner("Attempting to start local Ollama server and ensure model..."):
-            server_started_successfully = ollama_manager.start_ollama_serve()
-            st.session_state.ollama_server_started = server_started_successfully # Record success/failure
+    # Logic to attempt Ollama server start and model ensuring
+    # This runs if Ollama is selected AND the server hasn't been confirmed as successfully running.
+    # The statuses "EXISTING_SERVER_DETECTED" and "MANAGED_PROCESS_ALREADY_RUNNING" also count as success.
+    ollama_ready_statuses = ["SERVER_STARTED_AND_RESPONSIVE", "EXISTING_SERVER_DETECTED", "MANAGED_PROCESS_ALREADY_RUNNING"]
+    if st.session_state.selected_ai_provider == "Ollama" and \
+       st.session_state.ollama_server_started_status not in ollama_ready_statuses:
 
-            if server_started_successfully:
-                if ollama_manager.ensure_deepseek_model():
-                    st.session_state.deepseek_model_ensured = True
-                    # Sidebar will attempt to connect client on its own if these are true
-                else:
-                    st.session_state.deepseek_model_ensured = False
-                    st.sidebar.error("Failed to ensure deepseek-r1 model. Check logs.") # Also logged by manager
+        with st.spinner("Attempting to initialize local Ollama environment..."):
+            # Attempt to start the server
+            server_success, server_status_msg = ollama_manager.start_ollama_serve()
+            st.session_state.ollama_server_started_status = server_status_msg
+            st.session_state.ollama_server_started = server_success # Update legacy boolean flag
+
+            if server_success:
+                # If server is okay, try to ensure the model
+                if st.session_state.deepseek_model_ensured_status != "MODEL_AVAILABLE": # Only if not already confirmed
+                    model_success, model_status_msg = ollama_manager.ensure_deepseek_model()
+                    st.session_state.deepseek_model_ensured_status = model_status_msg
+                    st.session_state.deepseek_model_ensured = model_success # Update legacy boolean flag
+
+                    if not model_success:
+                        # Specific error messages based on model status
+                        if model_status_msg == "COMMAND_NOT_FOUND":
+                            st.sidebar.error("Ollama command not found. Cannot ensure model. Is Ollama installed and in PATH?")
+                        elif model_status_msg == "MODEL_PULL_FAILED":
+                            st.sidebar.error("Failed to pull deepseek-r1 model. Check network and Ollama logs.")
+                        elif model_status_msg == "MODEL_OPERATION_TIMEOUT":
+                            st.sidebar.error("Ollama model operation timed out. Check Ollama server health.")
+                        else: # MODEL_ENSURE_FAILED or other
+                            st.sidebar.error(f"Failed to ensure deepseek-r1 model ({model_status_msg}). Check logs.")
             else:
-                st.sidebar.error("Local Ollama server failed to start. Ollama provider will be unavailable. Check logs.")
-                st.session_state.deepseek_model_ensured = False # Can't ensure model if server not up
-        st.rerun() # Rerun to update UI based on server/model status
+                # Server did not start, update dependent states
+                st.session_state.deepseek_model_ensured = False
+                st.session_state.deepseek_model_ensured_status = "SERVER_FAILED_PREVENTING_MODEL_CHECK"
+                # Specific error messages based on server status
+                if server_status_msg == "COMMAND_NOT_FOUND":
+                    st.sidebar.error("Ollama command not found. Please install Ollama and ensure it's in your PATH.")
+                elif server_status_msg == "SERVER_START_TIMEOUT":
+                    st.sidebar.error("Local Ollama server started but timed out responding. Try restarting the app or check Ollama.")
+                elif server_status_msg == "SERVER_START_FAILED":
+                     st.sidebar.error(f"Local Ollama server failed to start ({server_status_msg}). Check logs.")
+                else: # Other specific server start failure messages from manager
+                    st.sidebar.error(f"Local Ollama server issue: {server_status_msg}. Ollama provider unavailable.")
+        st.rerun() # Rerun to update UI after attempt
 
     # Register stop_ollama_serve if our manager started a process
     # This needs to be idempotent and safe to call multiple times if registered via rerun.

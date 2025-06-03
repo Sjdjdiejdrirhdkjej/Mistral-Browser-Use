@@ -36,7 +36,7 @@ def start_ollama_serve():
     if OLLAMA_PROCESS and OLLAMA_PROCESS.poll() is None:
         logging.info("'ollama serve' process already managed and running.")
         if is_ollama_running(): # Double check if it's responsive
-            return True
+            return True, "MANAGED_PROCESS_ALREADY_RUNNING"
         else:
             logging.warning("Managed 'ollama serve' process exists but server not responding. Attempting to restart.")
             OLLAMA_PROCESS.terminate()
@@ -49,7 +49,7 @@ def start_ollama_serve():
     if is_ollama_running():
         logging.info("An Ollama server is already running and responsive (not managed by this app). Will use it.")
         # We don't assign to OLLAMA_PROCESS here as we didn't start it.
-        return True
+        return True, "EXISTING_SERVER_DETECTED"
 
     logging.info("Attempting to start 'ollama serve' in the background...")
     try:
@@ -76,7 +76,7 @@ def start_ollama_serve():
         for attempt in range(max_retries):
             if is_ollama_running():
                 logging.info("'ollama serve' is up and responding.")
-                return True
+                return True, "SERVER_STARTED_AND_RESPONSIVE"
             logging.info(f"Server not yet responsive. Retrying in {retry_delay}s... (Attempt {attempt + 1}/{max_retries})")
             time.sleep(retry_delay)
 
@@ -89,19 +89,19 @@ def start_ollama_serve():
             except subprocess.TimeoutExpired:
                 OLLAMA_PROCESS.kill()
         OLLAMA_PROCESS = None
-        return False
+        return False, "SERVER_START_TIMEOUT"
 
     except FileNotFoundError:
         logging.error("Ollama command not found. Cannot start 'ollama serve'. Ensure Ollama is installed and in PATH.")
         OLLAMA_PROCESS = None
-        return False
+        return False, "COMMAND_NOT_FOUND"
     except Exception as e:
         logging.error(f"Failed to start 'ollama serve': {e}")
         if OLLAMA_PROCESS and OLLAMA_PROCESS.poll() is None:
             OLLAMA_PROCESS.terminate()
             OLLAMA_PROCESS.kill() # Ensure it's killed if termination fails
         OLLAMA_PROCESS = None
-        return False
+        return False, "SERVER_START_FAILED"
 
 def ensure_deepseek_model():
     """Ensures the 'deepseek-r1' model is available, pulling it if necessary."""
@@ -112,11 +112,13 @@ def ensure_deepseek_model():
         result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=30, check=False)
         if result.returncode == 0 and model_name in result.stdout:
             logging.info(f"Model '{model_name}' is already available.")
-            return True
+            return True, "MODEL_AVAILABLE"
         elif result.returncode != 0:
             logging.warning(f"'ollama list' command failed while checking for {model_name}. Proceeding to pull. Error: {result.stderr}")
+            # Still proceed to pull, but this indicates a potential issue with 'ollama list' itself
+            # If 'ollama list' fails due to command not found, FileNotFoundError below will catch it.
 
-        logging.info(f"Model '{model_name}' not found locally or list failed. Attempting to pull '{model_name}'...")
+        logging.info(f"Model '{model_name}' not found locally or list failed/did not show model. Attempting to pull '{model_name}'...")
         # Using subprocess.run for pull as it's a blocking operation
         pull_process = subprocess.run(
             ["ollama", "pull", model_name],
@@ -126,21 +128,21 @@ def ensure_deepseek_model():
         )
         if pull_process.returncode == 0:
             logging.info(f"Model '{model_name}' pulled successfully.")
-            return True
+            return True, "MODEL_AVAILABLE"
         else:
             logging.error(f"Failed to pull model '{model_name}'. Return code: {pull_process.returncode}")
             logging.error(f"Stderr: {pull_process.stderr}")
             logging.error(f"Stdout: {pull_process.stdout}")
-            return False
+            return False, "MODEL_PULL_FAILED"
     except FileNotFoundError:
         logging.error(f"Ollama command not found. Cannot ensure model '{model_name}'. Ensure Ollama is installed and in PATH.")
-        return False
+        return False, "COMMAND_NOT_FOUND"
     except subprocess.TimeoutExpired:
-        logging.error(f"Timeout while trying to pull model '{model_name}'.")
-        return False
+        logging.error(f"Timeout while trying to list or pull model '{model_name}'.") # Clarified timeout source
+        return False, "MODEL_OPERATION_TIMEOUT"
     except Exception as e:
         logging.error(f"An error occurred while ensuring model '{model_name}': {e}")
-        return False
+        return False, "MODEL_ENSURE_FAILED"
 
 def stop_ollama_serve():
     """Stops the managed 'ollama serve' process if it's running."""
@@ -162,16 +164,22 @@ def stop_ollama_serve():
 # Example of how to use these (for testing manager directly, not part of app.py)
 if __name__ == '__main__':
     logging.info("--- Ollama Manager Direct Test --- ")
-    if start_ollama_serve():
+    # Test start_ollama_serve
+    started, start_status = start_ollama_serve()
+    logging.info(f"Start Ollama Serve Status: {started}, Message: {start_status}")
+
+    if started:
         logging.info("Ollama server started or was already running.")
-        if ensure_deepseek_model():
-            logging.info("Deepseek model ensured.")
-        else:
+        # Test ensure_deepseek_model
+        ensured, model_status = ensure_deepseek_model()
+        logging.info(f"Ensure Deepseek Model Status: {ensured}, Message: {model_status}")
+        if not ensured:
             logging.error("Failed to ensure deepseek model.")
+
         # Keep it running for a bit for testing, then stop
-        logging.info("Keeping server alive for 15 seconds for manual check...")
+        logging.info("Keeping server alive for 15 seconds for manual check (if it was started by manager)...")
         time.sleep(15)
-        stop_ollama_serve()
+        stop_ollama_serve() # This will only stop if OLLAMA_PROCESS is set
     else:
-        logging.error("Failed to start Ollama server.")
+        logging.error("Failed to start Ollama server initially.")
     logging.info("--- Test Complete --- ")
