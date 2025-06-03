@@ -16,14 +16,15 @@ class XenovaClient:
         """
         Helper function to parse JSON from the text pipeline's output.
         """
+        Helper function to parse JSON from the text pipeline's output.
+        Uses regex to find a JSON-like string and then attempts to parse it.
+        """
         try:
-            # T5 models might sometimes output text before or after the JSON.
-            # We try to find the first '{' and last '}'
-            json_start = generated_text.find('{')
-            json_end = generated_text.rfind('}') + 1
+            # Use regex to find a string that looks like a JSON object
+            match = re.search(r'\{.*\}', generated_text, re.DOTALL)
 
-            if json_start != -1 and json_end != -1 and json_start < json_end :
-                json_str = generated_text[json_start:json_end]
+            if match:
+                json_str = match.group(0)
                 # Basic cleaning of the JSON string - T5 might escape quotes
                 json_str = json_str.replace('\\n', '\n').replace('\\"', '"')
 
@@ -35,10 +36,10 @@ class XenovaClient:
                     print(f"Error: Missing one or more expected keys ({expected_keys}) in parsed JSON: {json_str}")
                     return None # Indicates parsing succeeded but content is invalid
             else:
-                print(f"Error: No valid JSON object found in AI response: {generated_text}")
+                print(f"Error: No valid JSON object found using regex in AI response: {generated_text}")
                 return None # Indicates no JSON found
         except json.JSONDecodeError as je:
-            print(f"Error decoding JSON from AI response: {je}. Response was: {generated_text}")
+            print(f"Error decoding JSON from AI response (after regex extraction): {je}. Extracted string was: {json_str if 'json_str' in locals() else 'N/A'}. Original response: {generated_text}")
             return None # Indicates JSON decoding error
         except Exception as e:
             print(f"An unexpected error occurred during JSON parsing: {e}")
@@ -88,7 +89,7 @@ Overall Objective: {objective}
 Text from Screen (OCR): {ocr_text if ocr_text else "No text extracted from screen."}
 Additional Context/Screen Description: {screen_description if screen_description else "None"}
 
-Respond STRICTLY in JSON format with the following keys: "error" (string or null for no error), "task_completed" (boolean), "objective_completed" (boolean), and "summary" (string, your reasoning for the status).
+You MUST respond ONLY with a valid JSON object. Do not include any text before or after the JSON. The JSON object must have the following keys: "error" (string or null for no error), "task_completed" (boolean), "objective_completed" (boolean), and "summary" (string, your reasoning for the status).
 Example: {{"error": null, "task_completed": false, "objective_completed": false, "summary": "The login form is visible based on OCR text."}}
 """
         try:
@@ -128,7 +129,7 @@ Overall Goal: {current_context if current_context else "Not specified."}
 Text from Screen (OCR): {ocr_text if ocr_text else "No text extracted from screen."}
 Additional Context/Screen Description: {screen_description if screen_description else "None"}
 
-Respond STRICTLY in JSON format with "thinking" (your reasoning) and "action" (the command to execute, e.g., click('button_id'), type('text', into='field_name'), complete(), error('reason')).
+You MUST respond ONLY with a valid JSON object. Do not include any text before or after the JSON. The JSON object must have the keys: "thinking" (your reasoning) and "action" (the command to execute, e.g., click('button_id'), type('text', into='field_name'), complete(), error('reason')).
 Example: {{"thinking": "The user wants to log in, OCR shows 'username' and 'password' fields. I should type username.", "action": "type('my_username', into='username field')"}}
 """
         try:
