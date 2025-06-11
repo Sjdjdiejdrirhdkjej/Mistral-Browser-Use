@@ -5,8 +5,12 @@ import base64
 from datetime import datetime
 from browser_automation import BrowserAutomation
 from mistral_client import MistralClient
-from xenova_client import XenovaClient
+# from xenova_client import XenovaClient # Removed
 from element_detector import ElementDetector
+from anthropic_client import AnthropicClient
+from openai_client import OpenAIClient
+from openrouter_client import OpenRouterClient
+from google_client import GoogleClient
 from ocr_utils import extract_text_from_image # Added OCR utility
 # import ollama_manager # Removed ollama_manager
 import atexit # Keep atexit for other potential uses
@@ -225,6 +229,26 @@ def initialize_session_state():
         st.session_state.browser = None
     if 'mistral_client' not in st.session_state:
         st.session_state.mistral_client = None
+    # New client states
+    if 'anthropic_client' not in st.session_state:
+        st.session_state.anthropic_client = None
+    if 'openai_client' not in st.session_state:
+        st.session_state.openai_client = None
+    if 'openrouter_client' not in st.session_state:
+        st.session_state.openrouter_client = None
+    if 'google_client' not in st.session_state:
+        st.session_state.google_client = None
+
+    # API key input states
+    if 'anthropic_api_key_input' not in st.session_state:
+        st.session_state.anthropic_api_key_input = ""
+    if 'openai_api_key_input' not in st.session_state:
+        st.session_state.openai_api_key_input = ""
+    if 'openrouter_api_key_input' not in st.session_state:
+        st.session_state.openrouter_api_key_input = ""
+    if 'google_api_key_input' not in st.session_state:
+        st.session_state.google_api_key_input = ""
+
     if 'element_detector' not in st.session_state:
         st.session_state.element_detector = ElementDetector()
     if 'automation_active' not in st.session_state:
@@ -257,16 +281,16 @@ def initialize_session_state():
     # Ollama related session state
     if 'selected_ai_provider' not in st.session_state:
         st.session_state.selected_ai_provider = "Mistral" # Default to Mistral
-    if 'xenova_client' not in st.session_state: # Added for Xenova
-        st.session_state.xenova_client = None
+    # if 'xenova_client' not in st.session_state: # Removed for Xenova
+    #     st.session_state.xenova_client = None
     if 'e2b_grid_rows' not in st.session_state:
         st.session_state.e2b_grid_rows = 10
     if 'e2b_grid_cols' not in st.session_state:
         st.session_state.e2b_grid_cols = 10
     if 'e2b_last_action' not in st.session_state:
         st.session_state.e2b_last_action = None
-    if 'show_raw_xenova_response' not in st.session_state:
-        st.session_state.show_raw_xenova_response = False
+    # if 'show_raw_xenova_response' not in st.session_state: # Removed Xenova specific
+    #     st.session_state.show_raw_xenova_response = False
 
 def setup_sidebar():
     """Setup sidebar for API key configuration and controls"""
@@ -276,8 +300,8 @@ def setup_sidebar():
     st.sidebar.subheader("🤖 AI Provider")
     st.session_state.selected_ai_provider = st.sidebar.selectbox(
         "Choose AI Provider",
-        ["Mistral", "Xenova (FLAN-T5 Base)"],
-        index=["Mistral", "Xenova (FLAN-T5 Base)"].index(st.session_state.selected_ai_provider)
+        ["Mistral", "Anthropic", "OpenAI", "OpenRouter", "Google"], # Added new providers
+        index=["Mistral", "Anthropic", "OpenAI", "OpenRouter", "Google"].index(st.session_state.selected_ai_provider)
     )
     st.sidebar.divider()
 
@@ -291,32 +315,69 @@ def setup_sidebar():
         )
         if api_key:
             if st.session_state.mistral_client is None or st.session_state.mistral_client.api_key != api_key:
-                st.session_state.mistral_client = MistralClient(api_key)
-                st.sidebar.success("✅ API Key configured")
+                st.session_state.mistral_client = MistralClient(api_key) # Actual initialization
+                st.sidebar.success("✅ Mistral API Key configured.")
         else:
-            st.sidebar.warning("⚠️ Please enter your Mistral AI API key")
+            st.sidebar.warning("⚠️ Please enter your Mistral AI API key.")
 
-    elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
-        st.sidebar.subheader("Xenova (FLAN-T5 Base - Local)")
-        if 'xenova_client' not in st.session_state or st.session_state.xenova_client is None:
-            try:
-                with st.spinner("Loading Xenova (FLAN-T5 Base) model..."):
-                    st.session_state.xenova_client = XenovaClient()
-                st.sidebar.success("✅ Xenova (FLAN-T5 Base) client initialized.")
-            except Exception as e:
-                st.sidebar.error(f"❌ Failed to initialize Xenova client: {e}")
-                st.session_state.xenova_client = None # Ensure it's None on failure
-        elif st.session_state.xenova_client:
-            st.sidebar.success("✅ Xenova (FLAN-T5 Base) client ready.")
-        else: # Should not happen if logic is correct, but as a fallback
-            st.sidebar.error("❌ Xenova (FLAN-T5 Base) client not initialized. Try re-selecting.")
-
-        # Add checkbox for showing raw Xenova response
-        st.session_state.show_raw_xenova_response = st.sidebar.checkbox(
-            "Show Raw AI Response (Xenova)",
-            key="show_raw_xenova_response_checkbox",
-            value=st.session_state.get("show_raw_xenova_response", False)
+    elif st.session_state.selected_ai_provider == "Anthropic":
+        st.sidebar.subheader("Anthropic API Key")
+        st.session_state.anthropic_api_key_input = st.sidebar.text_input(
+            "API Key",
+            value=os.getenv("ANTHROPIC_API_KEY", st.session_state.anthropic_api_key_input),
+            type="password",
+            help="Enter your Anthropic API key"
         )
+        if st.session_state.anthropic_api_key_input:
+            # Placeholder: Actual client initialization will be done when client is implemented
+            # For now, just acknowledge the key.
+            # st.session_state.anthropic_client = AnthropicClient(api_key=st.session_state.anthropic_api_key_input)
+            st.sidebar.success("✅ Anthropic API Key configured (placeholder initialization).")
+            st.session_state.anthropic_client = True # Temporary placeholder for status
+        else:
+            st.sidebar.warning("⚠️ Please enter your Anthropic API key.")
+
+    elif st.session_state.selected_ai_provider == "OpenAI":
+        st.sidebar.subheader("OpenAI API Key")
+        st.session_state.openai_api_key_input = st.sidebar.text_input(
+            "API Key",
+            value=os.getenv("OPENAI_API_KEY", st.session_state.openai_api_key_input),
+            type="password",
+            help="Enter your OpenAI API key"
+        )
+        if st.session_state.openai_api_key_input:
+            st.sidebar.success("✅ OpenAI API Key configured (placeholder initialization).")
+            st.session_state.openai_client = True # Temporary placeholder
+        else:
+            st.sidebar.warning("⚠️ Please enter your OpenAI API key.")
+
+    elif st.session_state.selected_ai_provider == "OpenRouter":
+        st.sidebar.subheader("OpenRouter API Key")
+        st.session_state.openrouter_api_key_input = st.sidebar.text_input(
+            "API Key",
+            value=os.getenv("OPENROUTER_API_KEY", st.session_state.openrouter_api_key_input),
+            type="password",
+            help="Enter your OpenRouter API key (compatible with OpenAI SDK format)"
+        )
+        if st.session_state.openrouter_api_key_input:
+            st.sidebar.success("✅ OpenRouter API Key configured (placeholder initialization).")
+            st.session_state.openrouter_client = True # Temporary placeholder
+        else:
+            st.sidebar.warning("⚠️ Please enter your OpenRouter API key.")
+
+    elif st.session_state.selected_ai_provider == "Google":
+        st.sidebar.subheader("Google AI API Key")
+        st.session_state.google_api_key_input = st.sidebar.text_input(
+            "API Key",
+            value=os.getenv("GOOGLE_API_KEY", st.session_state.google_api_key_input),
+            type="password",
+            help="Enter your Google AI API key (e.g., for Gemini)"
+        )
+        if st.session_state.google_api_key_input:
+            st.sidebar.success("✅ Google AI API Key configured (placeholder initialization).")
+            st.session_state.google_client = True # Temporary placeholder
+        else:
+            st.sidebar.warning("⚠️ Please enter your Google AI API key.")
 
     st.sidebar.divider()
 
@@ -417,13 +478,23 @@ def setup_sidebar():
             e2b_status_text = "🔴 Stopped"
         st.sidebar.write(f"E2B Session: {e2b_status_text}")
 
-    # Keep Mistral AI Status (conditional)
+    # Keep Mistral AI Status (conditional) / Update for new providers
     if st.session_state.selected_ai_provider == "Mistral":
         api_status = "🟢 Connected" if st.session_state.get('mistral_client') else "🔴 Not configured"
         st.sidebar.write(f"Mistral AI: {api_status}")
-    elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
-        xenova_status = "🟢 Connected" if st.session_state.get('xenova_client') else "🔴 Not initialized"
-        st.sidebar.write(f"Xenova (FLAN-T5 Base): {xenova_status}")
+    elif st.session_state.selected_ai_provider == "Anthropic":
+        anthropic_status = "🟢 Connected (Placeholder)" if st.session_state.get('anthropic_client') else "🔴 Not configured"
+        st.sidebar.write(f"Anthropic: {anthropic_status}")
+    elif st.session_state.selected_ai_provider == "OpenAI":
+        openai_status = "🟢 Connected (Placeholder)" if st.session_state.get('openai_client') else "🔴 Not configured"
+        st.sidebar.write(f"OpenAI: {openai_status}")
+    elif st.session_state.selected_ai_provider == "OpenRouter":
+        openrouter_status = "🟢 Connected (Placeholder)" if st.session_state.get('openrouter_client') else "🔴 Not configured"
+        st.sidebar.write(f"OpenRouter: {openrouter_status}")
+    elif st.session_state.selected_ai_provider == "Google":
+        google_status = "🟢 Connected (Placeholder)" if st.session_state.get('google_client') else "🔴 Not configured"
+        st.sidebar.write(f"Google AI: {google_status}")
+
 
 def display_chat_history():
     """Display chat message history"""
@@ -711,49 +782,33 @@ Analyze the provided gridded screenshot/description and output your next action.
                         )
                         ai_response_text = response_payload.get("action", "").strip() if isinstance(response_payload, dict) else str(response_payload).strip()
 
-                    elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
-                        if not st.session_state.xenova_client:
-                            add_message("assistant", "Xenova client not available for E2B automation.", "error")
+                    elif st.session_state.selected_ai_provider == "Anthropic":
+                        if not st.session_state.anthropic_client:
+                            add_message("assistant", "Anthropic client not available for E2B automation.", "error")
                             st.session_state.e2b_automation_active = False; st.rerun(); return
-                        # e2b_screen_description_for_xenova = f"E2B desktop gridded view (A1-J10). Prev action: {st.session_state.e2b_last_action or 'None'}. Objective: {st.session_state.current_objective}. Follow system context for action format."
-                        # The e2b_system_prompt is already defined and passed as current_context to Xenova's analyze_and_decide
-                        e2b_ocr_text = ""
-                        if gridded_screenshot_path:
-                            add_message("assistant", f"🔍 E2B: Performing OCR on: {gridded_screenshot_path}...", "info")
-                            e2b_ocr_text = extract_text_from_image(gridded_screenshot_path)
-                            if e2b_ocr_text == "OCR_ERROR_TESSERACT_NOT_FOUND":
-                                add_message("assistant", "❌ E2B OCR Error: Tesseract engine not found. Please ensure it's installed and in PATH.", "error")
-                            elif not e2b_ocr_text.strip():
-                                add_message("assistant", "ℹ️ E2B OCR: No text detected.", "info")
-                            else:
-                                add_message("assistant", f"""📄 E2B Full OCR Result:
-```text
-{e2b_ocr_text}
-```""", "info")
-                        else:
-                            add_message("assistant", "⚠️ E2B screenshot failed, skipping OCR.", "warning")
+                        add_message("assistant", "Anthropic E2B decision (Not Implemented).", "info")
+                        ai_response_text = "ERROR('Anthropic not implemented for E2B')"
 
-                        response_payload_xenova = st.session_state.xenova_client.analyze_and_decide(
-                            user_objective=f"E2B: Given gridded desktop, objective '{st.session_state.current_objective}', determine next action.",
-                            ocr_text=e2b_ocr_text, # Pass OCR text
-                            current_context=e2b_system_prompt, # Pass the detailed system prompt here
-                            screen_description="Gridded view of E2B desktop is available visually." # Contextual, non-OCR info
-                        )
-                        # Display raw Xenova response if toggled
-                        if st.session_state.get('show_raw_xenova_response', False):
-                            if response_payload_xenova.get('raw_successful_json_str'):
-                                add_message("assistant", f"""Successfully Parsed JSON (Xenova - E2B Action):
-```json
-{response_payload_xenova['raw_successful_json_str']}
-```""", "info")
-                            elif response_payload_xenova.get('raw_ai_output'):
-                                add_message("assistant", f"""Raw AI Output (Xenova - E2B Action Failure/Fallback):
-```
-{response_payload_xenova['raw_ai_output']}
-```""", "info")
+                    elif st.session_state.selected_ai_provider == "OpenAI":
+                        if not st.session_state.openai_client:
+                            add_message("assistant", "OpenAI client not available for E2B automation.", "error")
+                            st.session_state.e2b_automation_active = False; st.rerun(); return
+                        add_message("assistant", "OpenAI E2B decision (Not Implemented).", "info")
+                        ai_response_text = "ERROR('OpenAI not implemented for E2B')"
 
-                        ai_response_text = response_payload_xenova.get("action", "").strip() if isinstance(response_payload_xenova, dict) else str(response_payload_xenova).strip()
+                    elif st.session_state.selected_ai_provider == "OpenRouter":
+                        if not st.session_state.openrouter_client:
+                            add_message("assistant", "OpenRouter client not available for E2B automation.", "error")
+                            st.session_state.e2b_automation_active = False; st.rerun(); return
+                        add_message("assistant", "OpenRouter E2B decision (Not Implemented).", "info")
+                        ai_response_text = "ERROR('OpenRouter not implemented for E2B')"
 
+                    elif st.session_state.selected_ai_provider == "Google":
+                        if not st.session_state.google_client:
+                            add_message("assistant", "Google client not available for E2B automation.", "error")
+                            st.session_state.e2b_automation_active = False; st.rerun(); return
+                        add_message("assistant", "Google E2B decision (Not Implemented).", "info")
+                        ai_response_text = "ERROR('Google not implemented for E2B')"
                     else:
                         add_message("assistant", "No AI provider selected for E2B automation.", "error")
                         st.session_state.e2b_automation_active = False
@@ -834,14 +889,22 @@ Analyze the provided gridded screenshot/description and output your next action.
 
         # Check prerequisites (only if not in active E2B mode, due to the early return above)
         # Prerequisites check
+        # Prerequisites check
         if st.session_state.selected_ai_provider == "Mistral" and not st.session_state.get('mistral_client'):
             add_message("assistant", "Please configure your Mistral AI API key in the sidebar first.", "error")
-            st.rerun()
-            return
-        elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)" and not st.session_state.get('xenova_client'):
-            add_message("assistant", "Xenova (FLAN-T5 Base) client not initialized. Please check the sidebar.", "error")
-            st.rerun()
-            return
+            st.rerun(); return
+        elif st.session_state.selected_ai_provider == "Anthropic" and not st.session_state.get('anthropic_client'):
+            add_message("assistant", "Please configure your Anthropic API key in the sidebar first.", "error")
+            st.rerun(); return
+        elif st.session_state.selected_ai_provider == "OpenAI" and not st.session_state.get('openai_client'):
+            add_message("assistant", "Please configure your OpenAI API key in the sidebar first.", "error")
+            st.rerun(); return
+        elif st.session_state.selected_ai_provider == "OpenRouter" and not st.session_state.get('openrouter_client'):
+            add_message("assistant", "Please configure your OpenRouter API key in the sidebar first.", "error")
+            st.rerun(); return
+        elif st.session_state.selected_ai_provider == "Google" and not st.session_state.get('google_client'):
+            add_message("assistant", "Please configure your Google API key in the sidebar first.", "error")
+            st.rerun(); return
 
         if not st.session_state.get('automation_active'): # Check if browser automation is active
             add_message("assistant", "Browser session is not running. Please start it using 'Start Browser' in Session Controls if you want to automate web tasks.", "info")
@@ -871,14 +934,32 @@ Analyze the provided gridded screenshot/description and output your next action.
                     return
                 generated_steps = st.session_state.mistral_client.generate_steps_for_todo(
                     user_prompt=user_input,
-                    model_name="mistral-small-latest" # Changed from pixtral-large-latest for text generation
+                    model_name="mistral-small-latest"
                 )
-            elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
-                if not st.session_state.xenova_client:
-                    add_message("assistant", "Xenova client not initialized. Cannot generate steps.", "error")
-                    st.session_state.orchestrator_active = False
-                    st.rerun(); return
-                generated_steps = st.session_state.xenova_client.generate_steps_for_todo(user_prompt=user_input)
+            elif st.session_state.selected_ai_provider == "Anthropic":
+                if not st.session_state.anthropic_client:
+                    add_message("assistant", "Anthropic client not initialized. Cannot generate steps.", "error")
+                    st.session_state.orchestrator_active = False; st.rerun(); return
+                add_message("assistant", "Anthropic step generation (Not Implemented).", "info")
+                generated_steps = [f"Placeholder step for Anthropic: {user_input}"]
+            elif st.session_state.selected_ai_provider == "OpenAI":
+                if not st.session_state.openai_client:
+                    add_message("assistant", "OpenAI client not initialized. Cannot generate steps.", "error")
+                    st.session_state.orchestrator_active = False; st.rerun(); return
+                add_message("assistant", "OpenAI step generation (Not Implemented).", "info")
+                generated_steps = [f"Placeholder step for OpenAI: {user_input}"]
+            elif st.session_state.selected_ai_provider == "OpenRouter":
+                if not st.session_state.openrouter_client:
+                    add_message("assistant", "OpenRouter client not initialized. Cannot generate steps.", "error")
+                    st.session_state.orchestrator_active = False; st.rerun(); return
+                add_message("assistant", "OpenRouter step generation (Not Implemented).", "info")
+                generated_steps = [f"Placeholder step for OpenRouter: {user_input}"]
+            elif st.session_state.selected_ai_provider == "Google":
+                if not st.session_state.google_client:
+                    add_message("assistant", "Google client not initialized. Cannot generate steps.", "error")
+                    st.session_state.orchestrator_active = False; st.rerun(); return
+                add_message("assistant", "Google step generation (Not Implemented).", "info")
+                generated_steps = [f"Placeholder step for Google: {user_input}"]
             else:
                 add_message("assistant", "No AI provider selected or configured for step generation.", "error")
                 st.session_state.orchestrator_active = False
@@ -923,8 +1004,14 @@ Analyze the provided gridded screenshot/description and output your next action.
     
     # Orchestrator Main Execution Loop
     if st.session_state.get('orchestrator_active') and st.session_state.todo_tasks:
-        if not st.session_state.browser or not (st.session_state.mistral_client or st.session_state.xenova_client):
-            add_message("assistant", "Browser or AI client not initialized. Orchestrator cannot proceed.", "error")
+        # Check for browser and *any* configured AI client
+        ai_client_configured = (st.session_state.mistral_client or
+                                st.session_state.anthropic_client or
+                                st.session_state.openai_client or
+                                st.session_state.openrouter_client or
+                                st.session_state.google_client)
+        if not st.session_state.browser or not ai_client_configured:
+            add_message("assistant", "Browser or the selected AI client is not initialized. Orchestrator cannot proceed.", "error")
             st.session_state.orchestrator_active = False
             st.rerun()
             return
@@ -1016,16 +1103,30 @@ Analyze the provided gridded screenshot/description and output your next action.
                     response = st.session_state.mistral_client.analyze_and_decide(
                         image_data, current_task, model_name=action_decision_model_mistral, current_context=st.session_state.todo_objective
                     )
-                elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
-                    if not st.session_state.xenova_client:
-                        add_message("assistant", "Xenova client not available for action decision.", "error")
+                elif st.session_state.selected_ai_provider == "Anthropic":
+                    if not st.session_state.anthropic_client:
+                        add_message("assistant", "Anthropic client not available for action decision.", "error")
                         st.session_state.orchestrator_active = False; st.rerun(); return
-                    response = st.session_state.xenova_client.analyze_and_decide(
-                        user_objective=current_task,
-                        ocr_text=ocr_text, # Pass OCR text here
-                        current_context=st.session_state.todo_objective,
-                        screen_description="Element indices from annotated screenshot are available visually." # Or other relevant non-OCR context
-                    )
+                    add_message("assistant", "Anthropic action decision (Not Implemented).", "info")
+                    response = {"thinking": "Anthropic placeholder thinking", "action": "ERROR('Not Implemented')"}
+                elif st.session_state.selected_ai_provider == "OpenAI":
+                    if not st.session_state.openai_client:
+                        add_message("assistant", "OpenAI client not available for action decision.", "error")
+                        st.session_state.orchestrator_active = False; st.rerun(); return
+                    add_message("assistant", "OpenAI action decision (Not Implemented).", "info")
+                    response = {"thinking": "OpenAI placeholder thinking", "action": "ERROR('Not Implemented')"}
+                elif st.session_state.selected_ai_provider == "OpenRouter":
+                    if not st.session_state.openrouter_client:
+                        add_message("assistant", "OpenRouter client not available for action decision.", "error")
+                        st.session_state.orchestrator_active = False; st.rerun(); return
+                    add_message("assistant", "OpenRouter action decision (Not Implemented).", "info")
+                    response = {"thinking": "OpenRouter placeholder thinking", "action": "ERROR('Not Implemented')"}
+                elif st.session_state.selected_ai_provider == "Google":
+                    if not st.session_state.google_client:
+                        add_message("assistant", "Google client not available for action decision.", "error")
+                        st.session_state.orchestrator_active = False; st.rerun(); return
+                    add_message("assistant", "Google action decision (Not Implemented).", "info")
+                    response = {"thinking": "Google placeholder thinking", "action": "ERROR('Not Implemented')"}
                 else:
                     add_message("assistant", "No AI provider selected for action decision.", "error")
                     st.session_state.orchestrator_active = False
@@ -1034,20 +1135,11 @@ Analyze the provided gridded screenshot/description and output your next action.
                 thinking = response.get('thinking', 'No reasoning provided for action.')
                 action_str = response.get('action', '')
 
-                provider_tag = action_decision_model_mistral if st.session_state.selected_ai_provider == "Mistral" else "Xenova (FLAN-T5 Base)"
-                add_message("assistant", f"**Action Model ({provider_tag}) Reasoning:** {thinking}", "thinking")
+                provider_tag = st.session_state.selected_ai_provider # Use the selected provider name
+                if st.session_state.selected_ai_provider == "Mistral": # For Mistral, append model if needed
+                    provider_tag = f"Mistral ({action_decision_model_mistral})"
 
-                if st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)" and st.session_state.get('show_raw_xenova_response', False):
-                    if response.get('raw_successful_json_str'):
-                        add_message("assistant", f"""Successfully Parsed JSON (Xenova - Action):
-```json
-{response['raw_successful_json_str']}
-```""", "info")
-                    elif response.get('raw_ai_output'):
-                        add_message("assistant", f"""Raw AI Output (Xenova - Action Failure/Fallback):
-```
-{response['raw_ai_output']}
-```""", "info")
+                add_message("assistant", f"**Action Model ({provider_tag}) Reasoning:** {thinking}", "thinking")
 
                 if not action_str:
                     add_message("assistant", "No action could be determined. Trying task again or may need replan.", "error")
@@ -1110,16 +1202,30 @@ Analyze the provided gridded screenshot/description and output your next action.
                     analysis_result = st.session_state.mistral_client.analyze_state_vision(
                         image_data_after_action, current_task, st.session_state.todo_objective, model_name=vision_model_mistral
                     )
-                elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
-                    if not st.session_state.xenova_client:
-                        add_message("assistant", "Xenova client not available for state analysis.", "error")
+                elif st.session_state.selected_ai_provider == "Anthropic":
+                    if not st.session_state.anthropic_client:
+                        add_message("assistant", "Anthropic client not available for state analysis.", "error")
                         st.session_state.orchestrator_active = False; st.rerun(); return
-                    analysis_result = st.session_state.xenova_client.analyze_state_vision(
-                        current_task=current_task,
-                        objective=st.session_state.todo_objective,
-                        ocr_text=ocr_text_after_action, # Pass OCR text here
-                        screen_description="Element indices from annotated screenshot are available visually." # Or other relevant non-OCR context
-                    )
+                    add_message("assistant", "Anthropic state analysis (Not Implemented).", "info")
+                    analysis_result = {"summary": "Anthropic placeholder analysis", "task_completed": False, "objective_completed": False, "error": None}
+                elif st.session_state.selected_ai_provider == "OpenAI":
+                    if not st.session_state.openai_client:
+                        add_message("assistant", "OpenAI client not available for state analysis.", "error")
+                        st.session_state.orchestrator_active = False; st.rerun(); return
+                    add_message("assistant", "OpenAI state analysis (Not Implemented).", "info")
+                    analysis_result = {"summary": "OpenAI placeholder analysis", "task_completed": False, "objective_completed": False, "error": None}
+                elif st.session_state.selected_ai_provider == "OpenRouter":
+                    if not st.session_state.openrouter_client:
+                        add_message("assistant", "OpenRouter client not available for state analysis.", "error")
+                        st.session_state.orchestrator_active = False; st.rerun(); return
+                    add_message("assistant", "OpenRouter state analysis (Not Implemented).", "info")
+                    analysis_result = {"summary": "OpenRouter placeholder analysis", "task_completed": False, "objective_completed": False, "error": None}
+                elif st.session_state.selected_ai_provider == "Google":
+                    if not st.session_state.google_client:
+                        add_message("assistant", "Google client not available for state analysis.", "error")
+                        st.session_state.orchestrator_active = False; st.rerun(); return
+                    add_message("assistant", "Google state analysis (Not Implemented).", "info")
+                    analysis_result = {"summary": "Google placeholder analysis", "task_completed": False, "objective_completed": False, "error": None}
                 else:
                     add_message("assistant", "No AI provider selected for state analysis.", "error")
                     st.session_state.orchestrator_active = False
@@ -1127,20 +1233,10 @@ Analyze the provided gridded screenshot/description and output your next action.
                     return
 
                 analysis_summary = analysis_result.get('summary', 'No analysis summary provided.')
-                provider_tag_vision = vision_model_mistral if st.session_state.selected_ai_provider == "Mistral" else "Xenova (FLAN-T5 Base)"
+                provider_tag_vision = st.session_state.selected_ai_provider # Use selected provider
+                if st.session_state.selected_ai_provider == "Mistral": # Append model for Mistral
+                    provider_tag_vision = f"Mistral ({vision_model_mistral})"
                 add_message("assistant", f"**State Analysis Model ({provider_tag_vision}) Summary:** {analysis_summary}", "info")
-
-                if st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)" and st.session_state.get('show_raw_xenova_response', False):
-                    if analysis_result.get('raw_successful_json_str'):
-                        add_message("assistant", f"""Successfully Parsed JSON (Xenova - Vision):
-```json
-{analysis_result['raw_successful_json_str']}
-```""", "info")
-                    elif analysis_result.get('raw_ai_output'):
-                        add_message("assistant", f"""Raw AI Output (Xenova - Vision Failure):
-```
-{analysis_result['raw_ai_output']}
-```""", "info")
 
                 st.session_state.execution_summary.append({"task": current_task, "vision_analysis": analysis_result})
 
@@ -1198,35 +1294,29 @@ Analyze the provided gridded screenshot/description and output your next action.
                         with open(final_annotated_image_path, 'rb') as img_file:
                             final_image_data = base64.b64encode(img_file.read()).decode('utf-8')
                         final_analysis = st.session_state.mistral_client.analyze_state_vision(
-                            final_image_data, "Final objective verification", st.session_state.todo_objective, model_name=vision_model_mistral # Using vision_model_mistral
+                            final_image_data, "Final objective verification", st.session_state.todo_objective, model_name=vision_model_mistral
                         )
-                    elif st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)":
-                        if not st.session_state.xenova_client:
-                            add_message("assistant", "Xenova client not available for final verification.", "error"); st.rerun(); return
-                        final_analysis = st.session_state.xenova_client.analyze_state_vision(
-                            current_task="Final objective verification",
-                            objective=st.session_state.todo_objective,
-                            ocr_text=final_ocr_text,
-                            screen_description="Element indices from annotated screenshot are available visually."
-                        )
+                    elif st.session_state.selected_ai_provider == "Anthropic":
+                        add_message("assistant", "Anthropic final verification (Not Implemented).", "info")
+                        final_analysis = {"summary": "Anthropic placeholder final analysis", "objective_completed": False}
+                    elif st.session_state.selected_ai_provider == "OpenAI":
+                        add_message("assistant", "OpenAI final verification (Not Implemented).", "info")
+                        final_analysis = {"summary": "OpenAI placeholder final analysis", "objective_completed": False}
+                    elif st.session_state.selected_ai_provider == "OpenRouter":
+                        add_message("assistant", "OpenRouter final verification (Not Implemented).", "info")
+                        final_analysis = {"summary": "OpenRouter placeholder final analysis", "objective_completed": False}
+                    elif st.session_state.selected_ai_provider == "Google":
+                        add_message("assistant", "Google final verification (Not Implemented).", "info")
+                        final_analysis = {"summary": "Google placeholder final analysis", "objective_completed": False}
+                    # No need for an else here as provider selection is controlled.
 
                     final_summary = final_analysis.get('summary', 'No final summary.')
-                    final_provider_tag = vision_model_mistral if st.session_state.selected_ai_provider == "Mistral" else "Xenova (FLAN-T5 Base)"
+                    final_provider_tag = st.session_state.selected_ai_provider
+                    if st.session_state.selected_ai_provider == "Mistral":
+                         final_provider_tag = f"Mistral ({vision_model_mistral})"
                     add_message("assistant", f"Final Check Summary ({final_provider_tag}): {final_summary}", "info")
 
-                    if st.session_state.selected_ai_provider == "Xenova (FLAN-T5 Base)" and st.session_state.get('show_raw_xenova_response', False):
-                        if final_analysis.get('raw_successful_json_str'):
-                            add_message("assistant", f"""Successfully Parsed JSON (Xenova - Final Verification):
-```json
-{final_analysis['raw_successful_json_str']}
-```""", "info")
-                        elif final_analysis.get('raw_ai_output'):
-                            add_message("assistant", f"""Raw AI Output (Xenova - Final Verification Failure):
-```
-{final_analysis['raw_ai_output']}
-```""", "info")
-
-                    if final_analysis.get("objective_completed"): # Relies on boolean from analyze_state_vision
+                    if final_analysis.get("objective_completed"):
                         add_message("assistant", "🎉 Final verification confirms objective completed!", "success")
                     else:
                         add_message("assistant", "⚠️ Final verification suggests the objective may not be fully met.", "error")

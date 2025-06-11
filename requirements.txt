@@ -5,8 +5,6 @@ webdriver-manager
 e2b-desktop
 Pillow
 pytesseract
-transformers
-torch --index-url https://download.pytorch.org/whl/cpu
-torchvision --index-url https://download.pytorch.org/whl/cpu
-torchaudio --index-url https://download.pytorch.org/whl/cpu
-optimum[onnxruntime]
+anthropic
+openai
+google-generativeai
